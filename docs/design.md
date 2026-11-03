@@ -84,7 +84,7 @@ Wgplex.app — меню-приложение macOS, клиент публичн�
 
 ## 8. Сборка
 
-Swift Package, macOS 13+, без сторонних зависимостей. `make dmg` — `swift build -c release --arch arm64 --arch x86_64`, бандл, ad-hoc подпись с постоянным требованием `codesign --sign - -r='designated => identifier "io.github.mrfokin.wgplex"'` (иначе требование — cdhash, и при `brew upgrade --cask` Homebrew пишет «signer changed» и не переносит одобрение, M0, K8, K9), `hdiutil create`; релиз — `gh release create` с `.dmg` (design wgplex 16.1). Код — копия `app/` Wirefork (клиент RPC, модели статуса) без чтения и отправки конфига; меню переписывается на AppKit. Логика (клиент, представление статуса, вычисление уведомлений) — в библиотечном таргете `WgplexKit` под XCTest, с фейковым сервером API.
+Swift Package, macOS 13+, без сторонних зависимостей. `make dmg` — `swift build -c release --arch arm64 --arch x86_64`, бандл, ad-hoc подпись с постоянным требованием `codesign --sign - -r='designated => identifier "io.github.mrfokin.wgplex"'` (иначе требование — cdhash, и при `brew upgrade --cask` Homebrew пишет «signer changed» и не переносит одобрение, M0, K8, K9), `hdiutil create`; релиз — `gh release create` с `.dmg` (design wgplex 16.1). Код — основа `app/` Wirefork (клиент RPC, модели статуса), сверенная с `docs/api.md` движка, без чтения и отправки конфига; меню переписывается на AppKit. Логика (клиент, представление статуса, вычисление уведомлений) — в библиотечном таргете `WgplexKit` под XCTest, с фейковым сервером API.
 
 ## 9. План реализации
 
