@@ -5,6 +5,7 @@ import WgplexKit
 /// Root of the window: sidebar, banner, action bar and the current section.
 struct WindowRootView: View {
     @ObservedObject var state: WindowState
+    let settings: SettingsView
 
     var body: some View {
         NavigationSplitView {
@@ -32,6 +33,7 @@ struct WindowRootView: View {
         case .rules: RulesView(state: state)
         case .diagnostics: DiagnosticsView(state: state)
         case .logs: LogsView(state: state)
+        case .settings: settings
         }
     }
 }
