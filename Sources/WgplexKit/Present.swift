@@ -1,0 +1,131 @@
+import Foundation
+
+/// Status-item icon (design 4). Drawn by the app; the Kit only picks one.
+public enum MenuIcon: Equatable, Sendable {
+    /// Outlined shield: everything is off.
+    case off
+    /// Filled shield: running.
+    case on
+    /// Shield with "!": a problem (also used for `Icon.unknown`).
+    case warn
+    /// Shield with pause bars.
+    case paused
+    /// Engine not installed, not running or outdated: shield with "!".
+    case unavailable
+}
+
+/// Where a click on the problem row leads in the window (design 4, 5).
+public enum ProblemTarget: Equatable, Sendable {
+    /// Rule with this `index`.
+    case rule(Int)
+    /// Tunnel with this name.
+    case tunnel(String)
+    /// Config errors.
+    case config
+    /// Daemon unavailable.
+    case daemon
+}
+
+/// The problem row ("⚠ youtube на резерве").
+public struct ProblemRow: Equatable, Sendable {
+    /// Display text in Russian, without the "⚠" mark.
+    public var text: String
+    public var target: ProblemTarget
+
+    public init(text: String, target: ProblemTarget) {
+        self.text = text
+        self.target = target
+    }
+}
+
+/// One tunnel row.
+public struct TunnelRow: Equatable, Sendable {
+    public var name: String
+    /// Check mark: the tunnel is enabled.
+    public var checked: Bool
+    /// "⚠" after the name: enabled but dead or failed to start.
+    public var warn: Bool
+    /// Gray check mark: the engine is paused.
+    public var dimmed: Bool
+    /// Clickable; false when `can_control` is false.
+    public var enabled: Bool
+    /// Add the "запустится после возобновления" note (enabled while paused).
+    public var startsOnResume: Bool
+
+    public init(
+        name: String, checked: Bool, warn: Bool, dimmed: Bool, enabled: Bool, startsOnResume: Bool
+    ) {
+        self.name = name
+        self.checked = checked
+        self.warn = warn
+        self.dimmed = dimmed
+        self.enabled = enabled
+        self.startsOnResume = startsOnResume
+    }
+}
+
+/// Action offered when the engine is unavailable (design 3).
+public enum UnavailableAction: Equatable, Sendable {
+    /// "Как установить…": open the install page.
+    case howToInstall
+    /// Copy these shell commands (one per line) to the pasteboard.
+    case copyCommand([String])
+}
+
+/// Menu contents for the unavailable states.
+public struct UnavailableInfo: Equatable, Sendable {
+    /// Status line: "wgplex не установлен", "Демон не запущен", "Обновите wgplex".
+    public var statusText: String
+    /// Title of the action item: "Как установить…", "Копировать команду запуска",
+    /// "Копировать команды обновления".
+    public var actionTitle: String
+    public var action: UnavailableAction
+
+    public init(statusText: String, actionTitle: String, action: UnavailableAction) {
+        self.statusText = statusText
+        self.actionTitle = actionTitle
+        self.action = action
+    }
+}
+
+/// Everything the menu shows, computed from `EngineState` (design 4). Pure
+/// data, no AppKit.
+public struct MenuModel: Equatable, Sendable {
+    public var icon: MenuIcon
+    /// Tunnel rows in the order of `status.tunnels`; empty when unavailable.
+    public var tunnels: [TunnelRow]
+    /// First problem by priority: config errors, rule fallback/degraded,
+    /// dead or failed enabled tunnel. Nil when there is none or when unavailable.
+    public var problem: ProblemRow?
+    /// "Приостановить" or "Возобновить"; nil when unavailable.
+    public var pauseTitle: String?
+    /// The pause item is clickable (`can_control`).
+    public var pauseEnabled: Bool
+    /// The engine is paused.
+    public var paused: Bool
+    /// Non-nil when the engine is not ready (no tunnels, pause or problem rows).
+    public var unavailable: UnavailableInfo?
+
+    public init(
+        icon: MenuIcon, tunnels: [TunnelRow], problem: ProblemRow?, pauseTitle: String?,
+        pauseEnabled: Bool, paused: Bool, unavailable: UnavailableInfo?
+    ) {
+        self.icon = icon
+        self.tunnels = tunnels
+        self.problem = problem
+        self.pauseTitle = pauseTitle
+        self.pauseEnabled = pauseEnabled
+        self.paused = paused
+        self.unavailable = unavailable
+    }
+
+    /// Builds the menu model.
+    ///
+    /// - Parameters:
+    ///   - state: engine state from `Engine.locate`.
+    ///   - startsOnResume: names of tunnels for which `tunnel.enable` returned
+    ///     `starts_on_resume` (the status does not carry it).
+    public static func make(from state: EngineState, startsOnResume: Set<String> = []) -> MenuModel {
+        fatalError("not implemented")
+    }
+}
