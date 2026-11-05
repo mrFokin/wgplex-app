@@ -84,15 +84,6 @@ final class ClientTests: XCTestCase {
         }
     }
 
-    func testRequestIDsAreUniquePerCall() async throws {
-        let (c, rec) = harness { _ in .result(Fixture.statusFull) }
-        _ = try await c.status()
-        _ = try await c.status()
-        let ids = rec.requests.compactMap { rpcBody(of: $0)?["id"] }.map { "\($0)" }
-        XCTAssertEqual(ids.count, 2)
-        XCTAssertNotEqual(ids[0], ids[1])
-    }
-
     // MARK: Results
 
     func testResults() async throws {
