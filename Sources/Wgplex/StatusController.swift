@@ -16,8 +16,6 @@ final class StatusController: NSObject, NSMenuDelegate {
     private var model: MenuModel?
     private var rendered: Rendered?
     private var errorTask: Task<Void, Never>?
-    /// Tunnels enabled while paused; kept until resume or a status without pause.
-    private var startsOnResume: Set<String> = []
     /// Action error shown for 5 s, until the menu closes or the next action.
     private var errorText: String?
 
@@ -40,13 +38,12 @@ final class StatusController: NSObject, NSMenuDelegate {
     private func apply(_ new: EngineState) {
         state = new
         window.state.update(new)
-        if case .ready(let s) = new, s.paused {} else { startsOnResume = [] }
         rebuild()
     }
 
     /// Rebuilds the items in place when the content changed; works while the menu is open.
     private func rebuild() {
-        let new = state.map { MenuModel.make(from: $0, startsOnResume: startsOnResume) }
+        let new = state.map { MenuModel.make(from: $0, startsOnResume: poller.startsOnResume) }
         let now = Rendered(model: new, errorText: errorText)
         guard now != rendered else { return }
         rendered = now
@@ -138,10 +135,8 @@ final class StatusController: NSObject, NSMenuDelegate {
             }
             if let failure {
                 show(failure)
-            } else if on, result??.startsOnResume == true {
-                startsOnResume.insert(name)
             } else {
-                startsOnResume.remove(name)
+                poller.noteEnabled(name, startsOnResume: on && result??.startsOnResume == true)
             }
         }
     }
@@ -157,7 +152,7 @@ final class StatusController: NSObject, NSMenuDelegate {
             if let failure {
                 show(failure)
             } else if resuming {
-                startsOnResume = []
+                poller.clearStartsOnResume()
             }
         }
     }

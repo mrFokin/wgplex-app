@@ -3,43 +3,67 @@ import WgplexKit
 
 /// Reads the new bytes of the engine log; runs off the main actor.
 private enum LogFile {
-    enum Result: Sendable {
-        case unreadable
-        /// The file is shorter than the offset.
-        case truncated
-        /// Bytes starting at `start`.
-        case data(start: UInt64, bytes: Data)
+    enum Failure: Sendable {
+        case noAccess
+        case notFound
+        case other(String)
     }
 
-    static func read(path: String, offset: UInt64, maxBytes: Int) -> Result {
-        guard let handle = FileHandle(forReadingAtPath: path) else { return .unreadable }
-        defer { try? handle.close() }
+    enum Result: Sendable {
+        case failed(Failure)
+        /// The file is shorter than the offset or is another file (rotation).
+        case truncated
+        /// Bytes starting at `start` of the file with inode `inode`.
+        case data(start: UInt64, bytes: Data, inode: UInt64)
+    }
+
+    static func read(path: String, offset: UInt64, maxBytes: Int, inode: UInt64?) -> Result {
+        let fd = open(path, O_RDONLY)
+        if fd < 0 {
+            switch errno {
+            case EACCES: return .failed(.noAccess)
+            case ENOENT: return .failed(.notFound)
+            default: return .failed(.other(String(cString: strerror(errno))))
+            }
+        }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var st = stat()
+        guard fstat(fd, &st) == 0 else { return .failed(.other(String(cString: strerror(errno)))) }
+        let ino = UInt64(st.st_ino)
+        let size = UInt64(max(st.st_size, 0))
+        if size < offset || (inode != nil && inode != ino) { return .truncated }
+        // First read of a large file: only the last `maxBytes`.
+        let start = offset == 0 && size > UInt64(maxBytes) ? size - UInt64(maxBytes) : offset
         do {
-            let size = try handle.seekToEnd()
-            if size < offset { return .truncated }
-            // First read of a large file: only the last `maxBytes`.
-            let start = offset == 0 && size > UInt64(maxBytes) ? size - UInt64(maxBytes) : offset
             try handle.seek(toOffset: start)
             let bytes = try handle.read(upToCount: 4 * 1024 * 1024) ?? Data()
-            return .data(start: start, bytes: bytes)
+            return .data(start: start, bytes: bytes, inode: ino)
         } catch {
-            return .unreadable
+            return .failed(.other(error.localizedDescription))
         }
     }
+}
+
+private enum Problem {
+    case noPath
+    case failure(LogFile.Failure)
 }
 
 struct LogsView: View {
     @ObservedObject var state: WindowState
     @State private var tail = LogTail()
-    @State private var unreadable = false
+    @State private var problem: Problem?
+    /// Grows with every append; drives the auto-scroll (the line count stalls at `maxLines`).
+    @State private var revision = 0
+    @State private var inode: UInt64?
     @State private var level: LogLevel?
     @State private var query = ""
 
     var body: some View {
         VStack(spacing: 0) {
             if let status = state.status {
-                if unreadable {
-                    Text("Журнал недоступен: нужно членство в группе \(status.controlGroup)")
+                if let problem {
+                    Text(text(of: problem, status: status))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -53,6 +77,15 @@ struct LogsView: View {
             }
         }
         .task(id: state.status?.logPath) { await follow(path: state.status?.logPath) }
+    }
+
+    private func text(of problem: Problem, status: Status) -> String {
+        switch problem {
+        case .noPath: return "Путь журнала неизвестен"
+        case .failure(.noAccess): return "Журнал недоступен: нужно членство в группе \(status.controlGroup)"
+        case .failure(.notFound): return "Файл журнала не найден: \(status.logPath)"
+        case .failure(.other(let reason)): return "Не удалось прочитать журнал: \(reason)"
+        }
     }
 
     private var controls: some View {
@@ -86,6 +119,7 @@ struct LogsView: View {
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .onChange(of: revision) { _ in proxy.scrollTo("end") }
             .onChange(of: lines.count) { _ in proxy.scrollTo("end") }
             .onAppear { proxy.scrollTo("end") }
         }
@@ -102,27 +136,36 @@ struct LogsView: View {
     /// Re-reads the file once a second until the section goes away.
     private func follow(path: String?) async {
         tail = LogTail()
-        unreadable = false
+        problem = nil
+        inode = nil
         guard let path, !path.isEmpty else {
-            unreadable = true
+            problem = .noPath
             return
         }
         while !Task.isCancelled {
             let offset = tail.offset
             let maxBytes = tail.maxBytes
+            let known = inode
             let result = await Task.detached {
-                LogFile.read(path: path, offset: offset, maxBytes: maxBytes)
+                LogFile.read(path: path, offset: offset, maxBytes: maxBytes, inode: known)
             }.value
             switch result {
-            case .unreadable:
-                unreadable = true
+            case .failed(let failure):
+                problem = .failure(failure)
             case .truncated:
-                unreadable = false
+                problem = nil
                 tail.reset()
-            case .data(let start, let bytes):
-                unreadable = false
+                inode = nil
+                revision += 1
+                continue  // read the new file from its start at once
+            case .data(let start, let bytes, let ino):
+                problem = nil
+                inode = ino
                 if start != tail.offset { tail.offset = start }
-                if !bytes.isEmpty { tail.append(bytes) }
+                if !bytes.isEmpty {
+                    tail.append(bytes)
+                    revision += 1
+                }
             }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
         }

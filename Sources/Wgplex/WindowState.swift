@@ -39,8 +39,6 @@ final class WindowState: ObservableObject {
     @Published var message: Message?
     /// An action is running.
     @Published var busy = false
-    /// Tunnels enabled while paused (from `tunnel.enable`).
-    @Published private(set) var startsOnResume: Set<String> = []
 
     struct Message: Equatable {
         var text: String
@@ -54,7 +52,7 @@ final class WindowState: ObservableObject {
     }
 
     var model: WindowModel? {
-        state.map { WindowModel.make(from: $0, startsOnResume: startsOnResume) }
+        state.map { WindowModel.make(from: $0, startsOnResume: poller.startsOnResume) }
     }
 
     var status: Status? {
@@ -64,7 +62,6 @@ final class WindowState: ObservableObject {
 
     func update(_ new: EngineState) {
         state = new
-        if case .ready(let s) = new, s.paused {} else { startsOnResume = [] }
     }
 
     /// Opens the section a problem or banner leads to; the daemon target stays put.
@@ -91,11 +88,7 @@ final class WindowState: ObservableObject {
                 return nil
             }
             if failure == nil {
-                if on, result??.startsOnResume == true {
-                    self.startsOnResume.insert(name)
-                } else {
-                    self.startsOnResume.remove(name)
-                }
+                poller.noteEnabled(name, startsOnResume: on && result??.startsOnResume == true)
             }
             return failure.map { Message(text: $0, isError: true) }
         }
@@ -108,7 +101,7 @@ final class WindowState: ObservableObject {
                 if resuming { try await client.resume() } else { try await client.pause() }
                 return true
             }
-            if failure == nil, resuming { self.startsOnResume = [] }
+            if failure == nil, resuming { poller.clearStartsOnResume() }
             return failure.map { Message(text: $0, isError: true) }
         }
     }
@@ -129,8 +122,21 @@ final class WindowState: ObservableObject {
             if let failure { return Message(text: failure, isError: true) }
             guard let result else { return nil }
             if result.tunnels.isEmpty { return Message(text: "Применено", isError: false) }
-            return Message(
-                text: "Ошибок: \(result.tunnels.count). Работает прежний конфиг", isError: true)
+            let names = result.tunnels.map(\.name).joined(separator: ", ")
+            return Message(text: "Применено, не поднялись туннели: \(names)", isError: true)
+        }
+    }
+
+    private var messageTask: Task<Void, Never>?
+
+    /// Shows the outcome; it disappears after 5 s.
+    private func show(_ outcome: Message?) {
+        messageTask?.cancel()
+        message = outcome
+        guard outcome != nil else { return }
+        messageTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if !Task.isCancelled { self?.message = nil }
         }
     }
 
@@ -138,10 +144,10 @@ final class WindowState: ObservableObject {
     private func run(_ body: @escaping @MainActor (StatusPoller) async -> Message?) {
         guard !busy else { return }
         busy = true
-        message = nil
+        show(nil)
         Task {
             let outcome = await body(poller)
-            message = outcome
+            show(outcome)
             busy = false
         }
     }

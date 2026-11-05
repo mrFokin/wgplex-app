@@ -18,4 +18,18 @@ final class ActionErrorTests: XCTestCase {
         XCTAssertEqual(actionErrorText(RPCError.transport("x")), "Демон недоступен")
         XCTAssertEqual(actionErrorText(CancellationError()), "Ошибка")
     }
+
+    func testConfigInvalid() {
+        func text(_ errors: [String]) -> String {
+            let data = try! JSONEncoder().encode(["errors": errors])
+            return actionErrorText(RPCError.server(code: 1, message: "m", data: data))
+        }
+        XCTAssertEqual(text(["a"]), "Конфиг не применён: 1 ошибка. Работает прежний конфиг")
+        XCTAssertEqual(text(["a", "b"]), "Конфиг не применён: 2 ошибки. Работает прежний конфиг")
+        XCTAssertEqual(
+            text(Array(repeating: "x", count: 5)), "Конфиг не применён: 5 ошибок. Работает прежний конфиг")
+        XCTAssertEqual(
+            actionErrorText(RPCError.server(code: 1, message: "m", data: nil)),
+            "Конфиг не применён. Работает прежний конфиг")
+    }
 }
