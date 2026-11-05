@@ -46,14 +46,36 @@ private struct BannerArea: View {
                 line("Загрузка…", color: .secondary, target: nil)
             }
             if let banner = state.model?.banner {
-                line(
-                    banner.text, color: banner.kind == .paused ? .blue : .orange,
-                    target: banner.target)
+                if let update = banner.update {
+                    updateLine(banner.text, update)
+                } else {
+                    line(
+                        banner.text, color: banner.kind == .paused ? .blue : .orange,
+                        target: banner.target)
+                }
             }
             if let m = state.message {
                 line(m.text, color: m.isError ? .red : .green, target: nil)
             }
         }
+    }
+
+    /// Update banner: copy the upgrade command, open the release page.
+    private func updateLine(_ text: String, _ update: UpdateInfo) -> some View {
+        HStack {
+            Text(text)
+            Spacer()
+            Button("Скопировать команду") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(update.command, forType: .string)
+            }
+            if let url = URL(string: update.url) {
+                Link("Страница релиза", destination: url)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.orange.opacity(0.18))
     }
 
     private func line(_ text: String, color: Color, target: ProblemTarget?) -> some View {

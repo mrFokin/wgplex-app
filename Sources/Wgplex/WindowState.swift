@@ -39,6 +39,10 @@ final class WindowState: ObservableObject {
     @Published var message: Message?
     /// An action is running.
     @Published var busy = false
+    /// A newer release, shown as the lowest-priority banner.
+    @Published var update: UpdateInfo?
+    /// Called when the user starts "Перечитать конфиг" (its result is not notified).
+    var onReload: (() -> Void)?
 
     struct Message: Equatable {
         var text: String
@@ -52,7 +56,7 @@ final class WindowState: ObservableObject {
     }
 
     var model: WindowModel? {
-        state.map { WindowModel.make(from: $0, startsOnResume: poller.startsOnResume) }
+        state.map { WindowModel.make(from: $0, update: update, startsOnResume: poller.startsOnResume) }
     }
 
     var status: Status? {
@@ -117,6 +121,7 @@ final class WindowState: ObservableObject {
     }
 
     func reload() {
+        onReload?()
         run { poller in
             let (result, failure) = await poller.perform { try await $0.reload() }
             if let failure { return Message(text: failure, isError: true) }

@@ -9,11 +9,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller = StatusController()
     }
 
+    @objc private func openSettings() { controller?.openSettings() }
+
     /// Minimal main menu so ⌘C/⌘V/⌘A work in text fields and ⌘W closes the window.
     private func installMainMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
+        let settings = NSMenuItem(title: "Настройки…", action: #selector(openSettings), keyEquivalent: ",")
+        settings.target = self
+        appMenu.addItem(settings)
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Выйти из Wgplex", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)
