@@ -48,7 +48,10 @@ To start the app at login for all users, an administrator can add a LaunchAgent 
     <string>io.github.mrfokin.wgplex</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Applications/Wgplex.app/Contents/MacOS/Wgplex</string>
+        <string>/usr/bin/open</string>
+        <string>-g</string>
+        <string>-a</string>
+        <string>/Applications/Wgplex.app</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -64,7 +67,7 @@ The file must be owned by `root:wheel` with mode `644`; it takes effect at the n
 brew upgrade --cask wgplex-app
 ```
 
-This does not require "Open Anyway" again: Homebrew keeps the `.app` directory and the approval carries over. Replacing the app manually from a `.dmg` does require "Open Anyway" again.
+Replacing the app manually from a `.dmg` requires "Open Anyway" again.
 
 The app checks GitHub for the latest release once a day (can be disabled with "Проверять обновления" in Settings) and shows the `brew upgrade` command when a new version is out.
 
