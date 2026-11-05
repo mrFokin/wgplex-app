@@ -79,7 +79,7 @@ public struct Status: Decodable, Equatable, Sendable {
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
-        apiVersion = try c.decodeIfPresent(Int.self, forKey: .apiVersion) ?? 1
+        apiVersion = try c.decodeIfPresent(Int.self, forKey: .apiVersion) ?? 0
         version = try c.decodeIfPresent(String.self, forKey: .version) ?? ""
         canControl = try c.decodeIfPresent(Bool.self, forKey: .canControl) ?? false
         controlGroup = try c.decodeIfPresent(String.self, forKey: .controlGroup) ?? ""

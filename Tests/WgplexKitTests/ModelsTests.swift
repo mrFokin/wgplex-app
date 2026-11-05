@@ -196,6 +196,11 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(try decode(RouteSource.self, "\"bgp\""), .unknown("bgp"))
     }
 
+    // A reply without api_version reads as an old engine (0), not as current.
+    func testMissingAPIVersionIsZero() throws {
+        XCTAssertEqual(try decode(Status.self, "{}").apiVersion, 0)
+    }
+
     // api: minimal reply, every omitted field has a default.
     func testOmittedFieldsGetDefaults() throws {
         let s = try decode(Status.self, #"{"api_version": 1}"#)

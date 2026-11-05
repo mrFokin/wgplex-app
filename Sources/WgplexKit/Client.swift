@@ -1,7 +1,7 @@
 import Foundation
 
 /// The JSON-RPC client of the wgplex daemon (POST /rpc over HTTP/1.1).
-/// Every method throws `RPCError`.
+/// Every method throws `RPCError` (or `CancellationError` when the task is cancelled).
 public final class Client: Sendable {
     let roundTrip: @Sendable (Data, TimeInterval) async throws -> Data
 
