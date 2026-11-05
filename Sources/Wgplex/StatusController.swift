@@ -140,7 +140,6 @@ final class StatusController: NSObject, NSMenuDelegate {
         }
         menu.addItem(.separator())
         add("Открыть Wgplex…") { [weak self] in self?.openWindow(nil) }
-        add("Настройки…") { [weak self] in self?.openSettings() }
         add("Выход") { NSApp.terminate(nil) }
     }
 
