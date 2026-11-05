@@ -31,8 +31,9 @@ public struct LogTail: Sendable {
     public let maxLines: Int
 
     /// Offset in the file to read from next: the caller reads from here and
-    /// calls `append`, which advances it by `data.count`.
-    public private(set) var offset: UInt64
+    /// calls `append`, which advances it by `data.count`. The caller may set it once
+    /// before the first read to skip all but the last `maxBytes` of a large file.
+    public var offset: UInt64
 
     /// Complete lines, oldest first, at most `maxLines`.
     public private(set) var lines: [LogLine]
