@@ -1,2 +1,3 @@
-/// App version; keep in sync with VERSION until the release build (A5) reads it.
-public let appVersion = "0.1.0-dev"
+/// App version; must equal VERSION (`make dmg` fails otherwise).
+/// Between releases both carry a pre-release suffix, e.g. `0.1.1-dev`.
+public let appVersion = "0.1.0"
