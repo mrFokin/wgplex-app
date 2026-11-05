@@ -19,10 +19,10 @@ public enum Engine {
     public static let prefixes = ["/opt/homebrew", "/usr/local"]
 
     /// `<prefix>/var/run/wgplex.sock`.
-    public static func socketPath(prefix: String) -> String { fatalError("not implemented") }
+    public static func socketPath(prefix: String) -> String { prefix + "/var/run/wgplex.sock" }
 
     /// `<prefix>/opt/wgplex/bin/wgplex`.
-    public static func binaryPath(prefix: String) -> String { fatalError("not implemented") }
+    public static func binaryPath(prefix: String) -> String { prefix + "/opt/wgplex/bin/wgplex" }
 
     /// Finds the engine and its state. No file system or network access of
     /// its own: `fileExists` and `status` are injected.
@@ -41,6 +41,27 @@ public enum Engine {
         fileExists: @Sendable (String) -> Bool,
         status: @Sendable (String) async throws -> Status
     ) async -> EngineState {
-        fatalError("not implemented")
+        func state(of s: Status) -> EngineState {
+            s.apiVersion < minAPIVersion ? .outdated(apiVersion: s.apiVersion) : .ready(s)
+        }
+
+        if let socketOverride {
+            guard let s = try? await status(socketOverride) else {
+                return .notRunning
+            }
+            return state(of: s)
+        }
+
+        let installed = prefixes.filter { fileExists(binaryPath(prefix: $0)) }
+        if installed.isEmpty {
+            return .notInstalled
+        }
+        for prefix in installed {
+            let socket = socketPath(prefix: prefix)
+            if fileExists(socket), let s = try? await status(socket) {
+                return state(of: s)
+            }
+        }
+        return .notRunning
     }
 }
