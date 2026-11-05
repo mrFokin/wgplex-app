@@ -70,8 +70,8 @@ defaults read $ID
 ask settings-persist "значения переключателей в defaults совпадают с окном"
 
 say "4a. Туннель умер: beta"
-echo "  выключаю и включаю beta, жду 45 с..."
-$W down beta >/dev/null; $W up beta >/dev/null; sleep 45
+echo "  выключаю beta, через 15 с включаю, жду 75 с (check должен упасть)..."
+$W down beta >/dev/null; sleep 15; $W up beta >/dev/null; sleep 75
 ask n-dead "пришёл баннер «beta не отвечает» с «svc-a → alpha»"
 echo "  Щёлкните по баннеру."
 ask click-tunnel "окно открылось на туннеле beta"
@@ -80,7 +80,7 @@ say "4b. Ошибка конфига при reload (из CLI)"
 echo 'bogus_key: 1' >> "$C"; $W reload; sleep 20
 ask n-config "баннер «Изменения конфига не применены: 1 ошибка… Работает прежний конфиг»"
 echo "  Щёлкните по баннеру."
-ask click-config "окно открылось на разделе «Конфиг»"
+ask click-config "окно открылось на разделе «Туннели» (отдельного раздела «Конфиг» нет, баннер ошибки конфига ведёт туда)"
 cp /tmp/orig.yaml "$C"; $W reload >/dev/null; sleep 12
 
 say "4c. Демон пропал и вернулся"
@@ -104,14 +104,24 @@ cp /tmp/orig.yaml "$C"; $W reload >/dev/null
 say "6. Холодный запуск по клику на баннер"
 echo "  Сейчас закрою приложение, вызову баннер и запущу приложение заново."
 pkill -x Wgplex; sleep 2
-$W down beta >/dev/null; $W up beta >/dev/null
+$W down beta >/dev/null; sleep 15; $W up beta >/dev/null
 echo "  Приложение закрыто — баннер не придёт. Запускаю приложение, ждите баннера «beta не отвечает»"
 echo "  (если уже висит старый баннер в Центре уведомлений — щёлкните по нему)."
-open "$APP"; sleep 50
+open "$APP"; sleep 75
 echo "  Щёлкните по баннеру в Центре уведомлений."
 ask cold-click "окно открылось на нужном разделе"
 
 say "7. Баннер обновления"
+echo "  Баннер обновления скрыт любой проблемой (мёртвый туннель, пауза...), поэтому ставлю конфиг без правил."
+cat > "$C" <<'YAML'
+control_group: admin
+tunnels:
+  - name: gamma
+    conf: gamma.conf
+    routes: config
+    autostart: false
+YAML
+$W reload >/dev/null; sleep 15
 defaults write $ID update.version -string 9.9.9
 defaults write $ID update.url -string https://github.com/mrFokin/wgplex-app/releases/tag/v9.9.9
 pkill -x Wgplex; sleep 2; open "$APP"; sleep 8
@@ -119,11 +129,12 @@ echo "  Откройте окно приложения."
 ask update-banner "баннер «Доступна новая версия» с командой brew upgrade --cask wgplex-app, кнопками «Скопировать команду» и «Страница релиза»"
 ask update-copy "после «Скопировать команду» вставка в терминал даёт эту команду"
 defaults delete $ID update.version; defaults delete $ID update.url
+cp /tmp/orig.yaml "$C"; $W reload >/dev/null
 
 say "8. Уведомления выключены"
 echo "  В настройках снимите «Уведомления»."
 wait_enter
-$W down beta >/dev/null; $W up beta >/dev/null; sleep 45
+$W down beta >/dev/null; sleep 15; $W up beta >/dev/null; sleep 75
 ask notif-off "баннера не пришло"
 echo "  Верните «Уведомления» в настройках."
 
