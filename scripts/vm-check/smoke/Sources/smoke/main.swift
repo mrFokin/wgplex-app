@@ -510,6 +510,161 @@ func runAdmin() async {
 
 // Real rotation of the engine log: pad the log to > 5 MB while the daemon is stopped, start it
 // and let the follower (LogsView logic) cross the rotation.
+// ---- A4: NotificationPlanner / UpdateCheck on live daemon status (design 7, design 2) ----
+// Feeds consecutive real `status.get` states into plan(prev:next:now:). `skew` shifts the planner clock
+// so the 5-minute anti-flap window can be crossed without waiting.
+nonisolated(unsafe) var skew: TimeInterval = 0
+
+struct Watcher {
+    var planner = NotificationPlanner()
+    var prev: EngineState?
+
+    /// Polls every second until `done` holds for the state (or `secs` pass), then `settle` more polls.
+    mutating func run(_ secs: Double, settle: Int = 4, until done: (EngineState) -> Bool = { _ in false }) async -> [AppNotification] {
+        var out: [AppNotification] = []
+        let end = Date().addingTimeInterval(secs)
+        var left = -1
+        while Date() < end {
+            let next = await locate()
+            out += planner.plan(prev: prev, next: next, now: Date().addingTimeInterval(skew))
+            prev = next
+            if left < 0, done(next) { left = settle }
+            if left == 0 { break }
+            if left > 0 { left -= 1 }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        return out
+    }
+}
+
+func describe(_ n: [AppNotification]) -> String {
+    n.map { "[\($0.title) | \($0.body) | \($0.target)]" }.joined(separator: " ")
+}
+
+func betaState(_ s: EngineState) -> TunnelState? {
+    if case .ready(let st) = s { return tunnel(st, "beta")?.state }
+    return nil
+}
+
+func cli(_ args: String) -> String { sh("\(bin) \(args)").1 }
+
+func runNotify() async {
+    let orig = (try? String(contentsOfFile: cfgYAML, encoding: .utf8)) ?? ""
+    precondition(orig.contains("check: 10.77.1.1"), "unexpected config")
+    print("--- N1. запуск: первый опрос только запоминает")
+    await stopDaemon()
+    await startDaemon()
+    var w = Watcher()
+    var n = await w.run(3, settle: 0)
+    check(n.isEmpty, "first poll after start: no notification", describe(n))
+
+    print("--- N2. туннель умер (check fails x3) -> правило на резерве")
+    n = await w.run(150, until: { betaState($0) == .dead })
+    check(n.count == 1 && n[0].title == "beta не отвечает" && n[0].body == "svc-a → alpha" && n[0].target == .tunnel("beta"),
+        "beta dead: 'beta не отвечает' / 'svc-a → alpha'", describe(n))
+
+    print("--- N3. пауза / возобновление / переключения молчат")
+    _ = cli("pause")
+    n = await w.run(8, settle: 6, until: { if case .ready(let s) = $0 { return s.paused }; return false })
+    check(n.isEmpty, "pause: silent", describe(n))
+    _ = cli("resume")
+    n = await w.run(60, settle: 5, until: { betaState($0) == .dead })
+    // beta dies again, but within the 5 min anti-flap window of N2.
+    check(n.isEmpty, "resume + beta dead again within 5 min: silent (anti-flap)", describe(n))
+    _ = cli("down beta")
+    n = await w.run(8, settle: 4)
+    check(n.isEmpty, "down beta (intentional): silent", describe(n))
+    _ = cli("up beta")
+    n = await w.run(8, settle: 4)
+    check(n.isEmpty, "up beta: silent", describe(n))
+    _ = cli("up gamma")
+    n = await w.run(8, settle: 4)
+    check(n.isEmpty, "up gamma (switch): silent", describe(n))
+    _ = cli("down gamma")
+    n = await w.run(6, settle: 3)
+    check(n.isEmpty, "down gamma: silent", describe(n))
+
+    print("--- N4. после окна анти-мигания — снова уведомляет")
+    n = await w.run(90, settle: 2, until: { betaState($0) == .dead })
+    skew += 600
+    n = await w.run(4, settle: 0)  // flush
+    _ = cli("down beta")
+    _ = await w.run(6, settle: 2)
+    _ = cli("up beta")
+    n = await w.run(150, until: { betaState($0) == .dead })
+    check(n.count == 1 && n[0].title == "beta не отвечает", "beta dead after +10 min: notified again", describe(n))
+
+    print("--- N5. восстановление (check убран из конфига + reload)")
+    skew += 600
+    writeConfig(orig.replacingOccurrences(of: "    check: 10.77.1.1\n", with: ""))
+    _ = cli("reload")
+    n = await w.run(40, until: { betaState($0) == .up })
+    check(n.count == 1 && n[0].title == "beta снова работает" && n[0].body == "svc-a через beta" && n[0].target == .tunnel("beta"),
+        "recovery: 'beta снова работает' / 'svc-a через beta'", describe(n))
+
+    print("--- N6. ошибка конфига при reload")
+    let bad1 = orig + "bogus_key: 1\n"
+    writeConfig(bad1)
+    var r = sh("\(bin) reload")
+    info("reload: \(r.1.trimmingCharacters(in: .whitespacesAndNewlines))")
+    n = await w.run(15, settle: 3, until: { if case .ready(let s) = $0 { return s.configErrorCount > 0 }; return false })
+    check(n.count == 1 && n[0].title == "Изменения конфига не применены: 1 ошибка" && n[0].body == "Работает прежний конфиг" && n[0].target == .config,
+        "config error on reload", describe(n))
+    n = await w.run(5, settle: 3)
+    check(n.isEmpty, "same error stays: no repeat", describe(n))
+    writeConfig(orig + "other_bogus: 2\n")
+    _ = cli("reload")
+    n = await w.run(15, settle: 3, until: { if case .ready(let s) = $0 { return s.configErrors.joined().contains("other_bogus") }; return false })
+    check(n.count == 1 && n[0].target == .config, "repeated failed reload with another text: notified", describe(n))
+    w.planner.noteOwnReload()
+    writeConfig(orig + "third_bogus: 3\n")
+    _ = cli("reload")
+    n = await w.run(15, settle: 3, until: { if case .ready(let s) = $0 { return s.configErrors.joined().contains("third_bogus") }; return false })
+    check(n.isEmpty, "own reload (noteOwnReload): config error silent", describe(n))
+    writeConfig(orig)
+    _ = cli("reload")
+    n = await w.run(40, settle: 3, until: { if case .ready(let s) = $0 { return s.configErrorCount == 0 }; return false })
+    check(n.allSatisfy { $0.target != .config }, "good reload: no config notification", describe(n))
+
+    print("--- N7. демон пропал / вернулся")
+    skew += 600
+    await stopDaemon()
+    n = await w.run(15, settle: 2, until: { $0 == .notRunning })
+    check(n.count == 1 && n[0].title == "wgplex не работает" && n[0].target == .daemon, "daemon gone", describe(n))
+    await startDaemon()
+    n = await w.run(60, settle: 2, until: { if case .ready = $0 { return true }; return false })
+    check(n.count == 1 && n[0].title == "wgplex снова работает" && n[0].target == .daemon, "daemon back", describe(n))
+
+    print("--- N8. демон стартует с битым конфигом")
+    await stopDaemon()
+    _ = await w.run(10, settle: 1, until: { $0 == .notRunning })
+    writeConfig(orig + "bogus_key: 1\n")
+    await startDaemon()
+    n = await w.run(60, settle: 2, until: { if case .ready = $0 { return true }; return false })
+    info("start with broken config: \(describe(n))")
+    check(n.count == 1 && n[0].title.contains("запущен без туннелей") || (n.count == 1 && n[0].title == "wgplex снова работает" && n[0].body.contains("запущен без туннелей")),
+        "start with errors: one merged notification mentioning 'запущен без туннелей'", describe(n))
+    writeConfig(orig)
+    _ = cli("reload")
+    _ = await w.run(40, settle: 2, until: { if case .ready(let s) = $0 { return s.configured && s.configErrorCount == 0 }; return false })
+
+    print("--- N9. UpdateCheck")
+    let body = Data(#"{"tag_name":"v9.9.9","html_url":"https://github.com/mrFokin/wgplex-app/releases/tag/v9.9.9"}"#.utf8)
+    check(UpdateCheck.parse(body) == UpdateInfo(version: "9.9.9", url: "https://github.com/mrFokin/wgplex-app/releases/tag/v9.9.9"), "parse tag_name/html_url")
+    check(UpdateCheck.isNewer("9.9.9") && !UpdateCheck.isNewer("0.1.0-dev") && UpdateCheck.isNewer("0.1.0"), "isNewer vs appVersion \(appVersion)")
+    var uc = UpdateCheck()
+    let live = await uc.check(now: Date()) {
+        var req = URLRequest(url: URL(string: "https://api.github.com/repos/mrFokin/wgplex-app/releases/latest")!)
+        req.timeoutInterval = 15
+        let (d, resp) = try await URLSession.shared.data(for: req)
+        guard let h = resp as? HTTPURLResponse, (200..<300).contains(h.statusCode) else { throw URLError(.badServerResponse) }
+        return d
+    }
+    info("live GitHub check result: \(live)")
+    check(live == .failed || { if case .available = live { return true }; return live == .upToDate }(), "live GitHub fetch: no crash (.failed expected while repo has no releases)")
+    check(await uc.check(now: Date(), fetch: { body }) == .notDue, "second check same day: notDue")
+}
+
 func runRotate() async {
     print("--- real log rotation")
     guard let s = await ready() else { check(false, "rotate: ready"); return }
@@ -545,6 +700,7 @@ switch mode {
 case "guest": await runGuest(phase: CommandLine.arguments.dropFirst(2).first ?? "")
 case "member": await runMember()
 case "rotate": await runRotate()
+case "notify": await runNotify()
 default: await runAdmin()
 }
 print("SUMMARY pass=\(passes) fail=\(fails)")

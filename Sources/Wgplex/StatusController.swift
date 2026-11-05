@@ -11,6 +11,17 @@ final class StatusController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let poller = StatusPoller()
     private lazy var window = WindowController(poller: poller)
+    private let settings = Settings()
+    private let loginItem = LoginItem()
+    private let notifier: Notifier
+    private lazy var updater = Updater(settings: settings)
+    private lazy var settingsWindow = SettingsController(
+        settings: settings, loginItem: loginItem,
+        onNotificationsOn: { [weak self] in self?.notifier.requestAuthorization() },
+        onUpdatesChanged: { [weak self] in self?.updater.settingsChanged() })
+    private var planner = NotificationPlanner()
+    /// Previous poll for the planner; nil until the first one.
+    private var prevState: EngineState?
     /// Nil until the first poll answers.
     private var state: EngineState?
     private var model: MenuModel?
@@ -24,7 +35,8 @@ final class StatusController: NSObject, NSMenuDelegate {
         var errorText: String?
     }
 
-    override init() {
+    init(notifier: Notifier) {
+        self.notifier = notifier
         super.init()
         menu.delegate = self
         menu.autoenablesItems = false
@@ -32,10 +44,47 @@ final class StatusController: NSObject, NSMenuDelegate {
         item.button?.image = Icons.image(for: .off)
         rebuild()
         poller.onState = { [weak self] in self?.apply($0) }
+        notifier.onOpen = { [weak self] in self?.openWindow($0) }
+        window.state.onReload = { [weak self] in self?.planner.noteOwnReload() }
+        updater.onUpdate = { [weak self] in self?.window.state.update = $0 }
+        updater.onNotify = { [weak self] in
+            guard let self else { return }
+            self.notifier.post(NotificationPlanner.notification(for: $0))
+        }
         poller.start()
+        updater.start()
+        DispatchQueue.main.async { [weak self] in self?.firstRun() }
+    }
+
+    func openSettings() { settingsWindow.show() }
+
+    /// One question on the very first launch: login item and notification permission.
+    /// Without an app bundle neither exists, so nothing is asked and the flag stays unset.
+    private func firstRun() {
+        guard Settings.hasBundle, !settings.firstRunDone else { return }
+        settings.firstRunDone = true
+        let alert = NSAlert()
+        alert.messageText = "Запускать Wgplex при входе?"
+        alert.informativeText = "Это можно изменить в настройках."
+        alert.addButton(withTitle: "Запускать")
+        alert.addButton(withTitle: "Не нужно")
+        NSApp.activate(ignoringOtherApps: true)
+        let launch = alert.runModal() == .alertFirstButtonReturn
+        if launch {
+            loginItem.set(true)
+            if loginItem.error != nil { openSettings() }
+        }
+        notifier.requestAuthorization()
     }
 
     private func apply(_ new: EngineState) {
+        let now = Date()
+        // The planner always runs so its state stays current; the setting only gates display.
+        let planned = planner.plan(prev: prevState, next: new, now: now)
+        prevState = new
+        if settings.notifications {
+            for n in planned { notifier.post(n) }
+        }
         state = new
         window.state.update(new)
         rebuild()
@@ -90,6 +139,7 @@ final class StatusController: NSObject, NSMenuDelegate {
         }
         menu.addItem(.separator())
         add("Открыть Wgplex…") { [weak self] in self?.openWindow(nil) }
+        add("Настройки…") { [weak self] in self?.openSettings() }
         add("Выход") { NSApp.terminate(nil) }
     }
 

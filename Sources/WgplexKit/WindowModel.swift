@@ -1,12 +1,14 @@
 import Foundation
 
 /// Kind of the window banner (design 5). Priority, highest first:
-/// `configError`, `daemonUnavailable`, `paused`, `ruleFallback`.
+/// `configError`, `daemonUnavailable`, `paused`, `ruleFallback`, `updateAvailable`.
 public enum BannerKind: Equatable, Sendable {
     case configError
     case daemonUnavailable
     case paused
     case ruleFallback
+    /// "Доступна новая версия": below all problems; carries `Banner.update`.
+    case updateAvailable
 }
 
 /// The banner on top of the window.
@@ -16,11 +18,15 @@ public struct Banner: Equatable, Sendable {
     public var text: String
     /// Section the banner leads to.
     public var target: ProblemTarget
+    /// Version, release url and upgrade command; set only for `.updateAvailable`
+    /// (its `target` is not meaningful then).
+    public var update: UpdateInfo?
 
-    public init(kind: BannerKind, text: String, target: ProblemTarget) {
+    public init(kind: BannerKind, text: String, target: ProblemTarget, update: UpdateInfo? = nil) {
         self.kind = kind
         self.text = text
         self.target = target
+        self.update = update
     }
 }
 
@@ -133,10 +139,32 @@ public struct WindowModel: Equatable, Sendable {
     ///
     /// - Parameters:
     ///   - state: engine state from `Engine.locate`.
+    ///   - update: a newer release. Shown as `.updateAvailable` only when no other banner applies
+    ///     (lowest priority, after `ruleFallback`) and the engine state is `ready`; text
+    ///     "Доступна новая версия Wgplex <version>". Nil: no update banner.
     ///   - startsOnResume: tunnels for which `tunnel.enable` returned `starts_on_resume`.
     ///   - now: reference time for the handshake age.
     public static func make(
         from state: EngineState, startsOnResume: Set<String> = [], now: Date = Date()
+    ) -> WindowModel {
+        make(from: state, update: nil, startsOnResume: startsOnResume, now: now)
+    }
+
+    public static func make(
+        from state: EngineState, update: UpdateInfo? = nil, startsOnResume: Set<String> = [],
+        now: Date = Date()
+    ) -> WindowModel {
+        var model = makeBase(from: state, startsOnResume: startsOnResume, now: now)
+        if let update, model.banner == nil, case .ready = state {
+            model.banner = Banner(
+                kind: .updateAvailable, text: "Доступна новая версия Wgplex \(update.version)",
+                target: .daemon, update: update)
+        }
+        return model
+    }
+
+    private static func makeBase(
+        from state: EngineState, startsOnResume: Set<String>, now: Date
     ) -> WindowModel {
         let status: Status
         switch state {
