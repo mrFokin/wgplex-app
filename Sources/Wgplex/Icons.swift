@@ -18,7 +18,7 @@ enum Icons {
         return image
     }
 
-    private static func shield() -> NSBezierPath {
+    private nonisolated static func shield() -> NSBezierPath {
         let p = NSBezierPath()
         p.move(to: NSPoint(x: 9, y: 16.5))
         p.line(to: NSPoint(x: 15, y: 14.5))
@@ -34,7 +34,7 @@ enum Icons {
         return p
     }
 
-    private static func draw(_ icon: MenuIcon) {
+    private nonisolated static func draw(_ icon: MenuIcon) {
         let path = shield()
         NSColor.black.setFill()
         NSColor.black.setStroke()

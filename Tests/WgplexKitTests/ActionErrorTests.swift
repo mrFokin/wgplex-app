@@ -11,6 +11,11 @@ final class ActionErrorTests: XCTestCase {
             actionErrorText(RPCError.server(code: 4, message: "m", data: nil)), "Туннель не поднялся")
         XCTAssertEqual(
             actionErrorText(RPCError.server(code: -32603, message: "m", data: nil)), "Ошибка демона")
+        XCTAssertEqual(
+            actionErrorText(RPCError.server(code: 2, message: "m", data: nil)), "Конфиг не применён")
+        XCTAssertEqual(
+            actionErrorText(RPCError.server(code: 3, message: "m", data: nil)), "Туннель не найден")
+        XCTAssertEqual(actionErrorText(RPCError.transport("x")), "Демон недоступен")
         XCTAssertEqual(actionErrorText(CancellationError()), "Ошибка")
     }
 }

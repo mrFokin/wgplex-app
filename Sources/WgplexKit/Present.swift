@@ -163,7 +163,7 @@ public struct MenuModel: Equatable, Sendable {
         let tunnels = status.tunnels.map { t in
             TunnelRow(
                 name: t.name, checked: t.enabled,
-                warn: t.enabled && (t.state == .dead || t.state == .error),
+                warn: !status.paused && t.enabled && (t.state == .dead || t.state == .error),
                 dimmed: status.paused && t.enabled, enabled: status.canControl,
                 startsOnResume: startsOnResume.contains(t.name) && status.paused)
         }
@@ -174,17 +174,30 @@ public struct MenuModel: Equatable, Sendable {
             pauseEnabled: status.canControl, paused: status.paused, unavailable: nil)
     }
 
+    /// A rule is a problem when it is degraded or in fallback for a real cause;
+    /// `paused` and `disabled` are intentional states.
+    private static func isProblem(_ rule: RuleStatus) -> Bool {
+        guard rule.inFallback || rule.degraded else { return false }
+        switch rule.reason {
+        case nil, .dead, .unknown: return true
+        case .paused, .disabled: return false
+        }
+    }
+
     private static func problem(of status: Status) -> ProblemRow? {
         if status.configErrorCount > 0 {
             return ProblemRow(text: "ошибка конфига", target: .config)
         }
-        if let rule = status.rules.first(where: { $0.inFallback || $0.degraded }) {
+        if let rule = status.rules.first(where: isProblem) {
             var service = rule.services.first ?? "правило \(rule.index)"
             if rule.services.count > 1 { service += " и ещё \(rule.services.count - 1)" }
-            let text = rule.inFallback ? "\(service) на резерве" : "\(service) недоступно"
+            // In fallback nothing serves the rule; degraded only: a spare tunnel does.
+            let text = rule.inFallback ? "\(service) без туннеля" : "\(service) на резерве"
             return ProblemRow(text: text, target: .rule(rule.index))
         }
-        if let t = status.tunnels.first(where: { $0.enabled && ($0.state == .dead || $0.state == .error) }) {
+        if !status.paused,
+            let t = status.tunnels.first(where: { $0.enabled && ($0.state == .dead || $0.state == .error) })
+        {
             let text = t.state == .error ? "\(t.name): не поднялся" : "\(t.name): недоступен"
             return ProblemRow(text: text, target: .tunnel(t.name))
         }

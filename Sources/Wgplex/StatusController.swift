@@ -10,35 +10,53 @@ final class StatusController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
     private let poller = StatusPoller()
-    private var state: EngineState = .notRunning
-    private var model = MenuModel.make(from: .notRunning)
+    /// Nil until the first poll answers.
+    private var state: EngineState?
+    private var model: MenuModel?
+    private var rendered: Rendered?
+    private var errorTask: Task<Void, Never>?
     /// Tunnels enabled while paused; kept until resume or a status without pause.
     private var startsOnResume: Set<String> = []
-    /// Action error shown in the menu until the next poll.
+    /// Action error shown for 5 s, until the menu closes or the next action.
     private var errorText: String?
+
+    private struct Rendered: Equatable {
+        var model: MenuModel?
+        var errorText: String?
+    }
 
     override init() {
         super.init()
         menu.delegate = self
         menu.autoenablesItems = false
         item.menu = menu
-        item.button?.image = Icons.image(for: model.icon)
+        item.button?.image = Icons.image(for: .off)
+        rebuild()
         poller.onState = { [weak self] in self?.apply($0) }
         poller.start()
     }
 
     private func apply(_ new: EngineState) {
         state = new
-        if case .ready(let s) = new, !s.paused { startsOnResume = [] }
-        errorText = nil
+        if case .ready(let s) = new, s.paused {} else { startsOnResume = [] }
         rebuild()
     }
 
-    /// Rebuilds the items in place; works while the menu is open.
+    /// Rebuilds the items in place when the content changed; works while the menu is open.
     private func rebuild() {
-        model = MenuModel.make(from: state, startsOnResume: startsOnResume)
-        item.button?.image = Icons.image(for: model.icon)
+        let new = state.map { MenuModel.make(from: $0, startsOnResume: startsOnResume) }
+        let now = Rendered(model: new, errorText: errorText)
+        guard now != rendered else { return }
+        rendered = now
+        model = new
+        item.button?.image = Icons.image(for: new?.icon ?? .off)
         menu.removeAllItems()
+        guard let model = new else {
+            add("Загрузка…")
+            menu.addItem(.separator())
+            add("Выход") { NSApp.terminate(nil) }
+            return
+        }
         if let u = model.unavailable {
             add(u.statusText)
             menu.addItem(.separator())
@@ -72,7 +90,7 @@ final class StatusController: NSObject, NSMenuDelegate {
         }
         menu.addItem(.separator())
         if model.unavailable == nil { add("Открыть Wgplex…") }
-        add("Выход", enabled: true) { NSApp.terminate(nil) }
+        add("Выход") { NSApp.terminate(nil) }
     }
 
     private static let dimmedCheck: NSImage? = {
@@ -83,7 +101,7 @@ final class StatusController: NSObject, NSMenuDelegate {
     /// Adds an item; without an action (or with `enabled: false`) it is inactive.
     @discardableResult
     private func add(
-        _ title: String, enabled: Bool = false, action: (@MainActor () -> Void)? = nil
+        _ title: String, enabled: Bool = true, action: (@MainActor () -> Void)? = nil
     ) -> NSMenuItem {
         let mi = ActionItem(title: title, handler: action)
         mi.isEnabled = enabled && action != nil
@@ -102,34 +120,54 @@ final class StatusController: NSObject, NSMenuDelegate {
     }
 
     private func toggle(_ name: String, on: Bool) {
-        let paused = model.paused
+        clearError()
         Task {
-            let failure = await poller.perform { client in
-                if on {
-                    _ = try await client.enable(name)
-                } else {
-                    try await client.disable(name)
-                }
+            let (result, failure) = await poller.perform { client -> EnableResult? in
+                if on { return try await client.enable(name) }
+                try await client.disable(name)
+                return nil
             }
-            // Remember the tunnel while paused; the status does not carry it.
-            if on && paused && failure == nil { startsOnResume.insert(name) } else if !on { startsOnResume.remove(name) }
-            if let failure { show(failure) }
+            if let failure {
+                show(failure)
+            } else if on, result??.startsOnResume == true {
+                startsOnResume.insert(name)
+            } else {
+                startsOnResume.remove(name)
+            }
         }
     }
 
     private func togglePause() {
-        let resuming = model.paused
+        let resuming = model?.paused ?? false
+        clearError()
         Task {
-            let failure = await poller.perform { client in
+            let (_, failure) = await poller.perform { client -> Bool in
                 if resuming { try await client.resume() } else { try await client.pause() }
+                return true
             }
-            if resuming && failure == nil { startsOnResume = [] }
-            if let failure { show(failure) }
+            if let failure {
+                show(failure)
+            } else if resuming {
+                startsOnResume = []
+            }
         }
     }
 
     private func show(_ text: String) {
         errorText = text
+        rebuild()
+        errorTask?.cancel()
+        errorTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if !Task.isCancelled { self?.clearError() }
+        }
+    }
+
+    private func clearError() {
+        errorTask?.cancel()
+        errorTask = nil
+        guard errorText != nil else { return }
+        errorText = nil
         rebuild()
     }
 
@@ -142,6 +180,7 @@ final class StatusController: NSObject, NSMenuDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         poller.setMenuOpen(false)
+        clearError()
     }
 }
 

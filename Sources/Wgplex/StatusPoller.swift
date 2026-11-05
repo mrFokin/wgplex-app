@@ -10,6 +10,9 @@ final class StatusPoller {
 
     private var timer: Timer?
     private var inFlight = false
+    private var repollPending = false
+    /// Socket that answered the last successful poll; actions use it.
+    private var lastSocketPath: String?
 
     /// Starts background polling (10 s) and polls once.
     func start() {
@@ -31,25 +34,38 @@ final class StatusPoller {
         timer = t
     }
 
-    /// One `status.get`; skipped while another one is in flight.
+    /// One `status.get`; a call during another one runs once more after it.
     func poll() {
-        guard !inFlight else { return }
+        guard !inFlight else {
+            repollPending = true
+            return
+        }
         inFlight = true
         Task { [weak self] in
-            let state = await Self.locate()
+            let state = await Self.locate { path in
+                await MainActor.run { self?.lastSocketPath = path }
+            }
             guard let self else { return }
             self.inFlight = false
+            if case .ready = state {} else { self.lastSocketPath = nil }
             self.onState?(state)
+            if self.repollPending {
+                self.repollPending = false
+                self.poll()
+            }
         }
     }
 
-    /// Runs `body` with a client on the live socket, then polls at once.
-    /// Returns an error text for the menu, or nil.
-    func perform(_ body: @escaping @Sendable (Client) async throws -> Void) async -> String? {
+    /// Runs `body` with a client on the socket that answered the last poll,
+    /// then polls at once. Returns the result and an error text for the menu.
+    func perform<T: Sendable>(
+        _ body: @escaping @Sendable (Client) async throws -> T
+    ) async -> (value: T?, failure: String?) {
+        var value: T?
         var failure: String?
-        if let path = Self.socketPath() {
+        if let path = lastSocketPath {
             do {
-                try await body(Client(path: path))
+                value = try await body(Client(path: path))
             } catch {
                 failure = actionErrorText(error)
             }
@@ -57,20 +73,22 @@ final class StatusPoller {
             failure = "Демон недоступен"
         }
         poll()
-        return failure
+        return (value, failure)
     }
 
     private nonisolated static func exists(_ path: String) -> Bool {
         FileManager.default.fileExists(atPath: path)
     }
 
-    private nonisolated static func socketPath() -> String? {
-        Engine.prefixes.map(Engine.socketPath(prefix:)).first(where: exists)
-    }
-
-    private nonisolated static func locate() async -> EngineState {
+    private nonisolated static func locate(
+        answered: @escaping @Sendable (String) async -> Void
+    ) async -> EngineState {
         await Engine.locate(
             fileExists: { exists($0) },
-            status: { try await Client(path: $0).status() })
+            status: {
+                let status = try await Client(path: $0).status()
+                await answered($0)
+                return status
+            })
     }
 }

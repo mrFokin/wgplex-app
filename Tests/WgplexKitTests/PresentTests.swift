@@ -151,6 +151,61 @@ final class PresentTests: XCTestCase {
         XCTAssertEqual(tunnelOnly.problem?.target, .tunnel("de"))
     }
 
+    // api: reason paused/disabled is an intentional state, not a problem
+    func testIntentionalReasonsAreNotProblems() {
+        for reason in [RuleReason.paused, .disabled] {
+            for (fb, dg) in [(true, true), (false, true), (true, false)] {
+                let rule = RuleStatus(
+                    index: 0, services: ["youtube"], via: ["a"], inFallback: fb, degraded: dg, reason: reason)
+                let st = Status(canControl: true, tunnels: [tunnel("a")], rules: [rule])
+                XCTAssertNil(model(st).problem, "\(reason) fb=\(fb) dg=\(dg)")
+            }
+        }
+        // paused engine: rules with reason paused and dead tunnels give no problem
+        let rule = RuleStatus(
+            index: 0, services: ["youtube"], via: ["a"], inFallback: true, degraded: true, reason: .paused)
+        let st = Status(
+            canControl: true, paused: true, icon: .paused,
+            tunnels: [tunnel("a", state: .dead), tunnel("b", state: .error)], rules: [rule])
+        let m = model(st)
+        XCTAssertNil(m.problem)
+        XCTAssertEqual(m.tunnels.map(\.warn), [false, false])
+    }
+
+    func testProblemTexts() {
+        func text(_ rule: RuleStatus) -> String? {
+            model(Status(canControl: true, tunnels: [tunnel("a")], rules: [rule])).problem?.text
+        }
+        XCTAssertEqual(
+            text(RuleStatus(index: 1, services: ["youtube"], via: ["a", "b"], tunnel: "b", degraded: true, reason: .dead)),
+            "youtube на резерве")
+        XCTAssertEqual(
+            text(RuleStatus(index: 1, services: ["youtube"], via: ["a"], inFallback: true, degraded: true, reason: .dead)),
+            "youtube без туннеля")
+        XCTAssertEqual(
+            text(RuleStatus(index: 1, services: ["youtube"], via: ["a"], inFallback: true)),
+            "youtube без туннеля")
+        XCTAssertEqual(
+            text(RuleStatus(index: 1, services: ["a", "b", "c"], via: ["a"], inFallback: true)),
+            "a и ещё 2 без туннеля")
+    }
+
+    func testFirstProblemWins() {
+        let rules = [
+            RuleStatus(index: 0, services: ["x"], via: ["a"], inFallback: true, degraded: true, reason: .disabled),
+            RuleStatus(index: 1, services: ["first"], via: ["a"], inFallback: true, degraded: true, reason: .dead),
+            RuleStatus(index: 2, services: ["second"], via: ["a"], inFallback: true, degraded: true, reason: .dead),
+        ]
+        let p = model(Status(canControl: true, tunnels: [tunnel("a")], rules: rules)).problem
+        XCTAssertEqual(p?.target, .rule(1))
+        XCTAssertEqual(p?.text, "first без туннеля")
+
+        let tunnels = [tunnel("d1", state: .dead), tunnel("d2", state: .dead)]
+        let t = model(Status(canControl: true, tunnels: tunnels)).problem
+        XCTAssertEqual(t?.target, .tunnel("d1"))
+        XCTAssertEqual(t?.text, "d1: недоступен")
+    }
+
     // design 3: not installed
     func testNotInstalled() {
         let m = MenuModel.make(from: .notInstalled)
