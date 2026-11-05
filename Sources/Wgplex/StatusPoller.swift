@@ -8,6 +8,26 @@ final class StatusPoller {
     /// Called on every fresh state.
     var onState: ((EngineState) -> Void)?
 
+    /// Tunnels enabled while paused; kept until resume or a status without pause.
+    private(set) var startsOnResume: Set<String> = []
+    private var lastState: EngineState?
+
+    /// Records the outcome of `tunnel.enable`/`tunnel.disable` and refreshes the listeners.
+    func noteEnabled(_ name: String, startsOnResume deferred: Bool) {
+        if deferred { startsOnResume.insert(name) } else { startsOnResume.remove(name) }
+        republish()
+    }
+
+    /// Forgets the deferred starts (after resume).
+    func clearStartsOnResume() {
+        startsOnResume = []
+        republish()
+    }
+
+    private func republish() {
+        if let lastState { onState?(lastState) }
+    }
+
     private var timer: Timer?
     private var inFlight = false
     private var repollPending = false
@@ -20,9 +40,23 @@ final class StatusPoller {
         poll()
     }
 
+    private var menuOpen = false
+    private var windowOpen = false
+
     /// 1.5 s while the menu is open, 10 s otherwise.
     func setMenuOpen(_ open: Bool) {
-        setInterval(open ? 1.5 : 10)
+        menuOpen = open
+        updateInterval()
+    }
+
+    /// 1.5 s while the window is open, 10 s otherwise.
+    func setWindowOpen(_ open: Bool) {
+        windowOpen = open
+        updateInterval()
+    }
+
+    private func updateInterval() {
+        setInterval(menuOpen || windowOpen ? 1.5 : 10)
     }
 
     private func setInterval(_ value: TimeInterval) {
@@ -48,6 +82,8 @@ final class StatusPoller {
             guard let self else { return }
             self.inFlight = false
             if case .ready = state {} else { self.lastSocketPath = nil }
+            self.lastState = state
+            if case .ready(let s) = state, s.paused {} else { self.startsOnResume = [] }
             self.onState?(state)
             if self.repollPending {
                 self.repollPending = false
