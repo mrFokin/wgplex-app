@@ -126,6 +126,68 @@ public struct MenuModel: Equatable, Sendable {
     ///   - startsOnResume: names of tunnels for which `tunnel.enable` returned
     ///     `starts_on_resume` (the status does not carry it).
     public static func make(from state: EngineState, startsOnResume: Set<String> = []) -> MenuModel {
-        fatalError("not implemented")
+        func unavailable(_ text: String, _ title: String, _ action: UnavailableAction) -> MenuModel {
+            MenuModel(
+                icon: .unavailable, tunnels: [], problem: nil, pauseTitle: nil,
+                pauseEnabled: false, paused: false,
+                unavailable: UnavailableInfo(statusText: text, actionTitle: title, action: action))
+        }
+
+        let status: Status
+        switch state {
+        case .notInstalled:
+            return unavailable("wgplex не установлен", "Как установить…", .howToInstall)
+        case .notRunning:
+            return unavailable(
+                "Демон не запущен", "Копировать команду запуска",
+                .copyCommand(["sudo brew services start --sudo-service-user=root wgplex"]))
+        case .outdated:
+            return unavailable(
+                "Обновите wgplex", "Копировать команды обновления",
+                .copyCommand([
+                    "brew upgrade wgplex",
+                    "sudo brew services restart --sudo-service-user=root wgplex",
+                ]))
+        case .ready(let s):
+            status = s
+        }
+
+        let icon: MenuIcon
+        switch status.icon {
+        case .off: icon = .off
+        case .on: icon = .on
+        case .paused: icon = .paused
+        case .warn, .unknown: icon = .warn
+        }
+
+        let tunnels = status.tunnels.map { t in
+            TunnelRow(
+                name: t.name, checked: t.enabled,
+                warn: t.enabled && (t.state == .dead || t.state == .error),
+                dimmed: status.paused && t.enabled, enabled: status.canControl,
+                startsOnResume: startsOnResume.contains(t.name) && status.paused)
+        }
+
+        return MenuModel(
+            icon: icon, tunnels: tunnels, problem: problem(of: status),
+            pauseTitle: status.paused ? "Возобновить" : "Приостановить",
+            pauseEnabled: status.canControl, paused: status.paused, unavailable: nil)
+    }
+
+    private static func problem(of status: Status) -> ProblemRow? {
+        if status.configErrorCount > 0 {
+            return ProblemRow(text: "ошибка конфига", target: .config)
+        }
+        if let rule = status.rules.first(where: { $0.inFallback || $0.degraded }) {
+            var service = rule.services.first ?? "правило \(rule.index)"
+            if rule.services.count > 1 { service += " и ещё \(rule.services.count - 1)" }
+            let text = rule.inFallback ? "\(service) на резерве" : "\(service) недоступно"
+            return ProblemRow(text: text, target: .rule(rule.index))
+        }
+        if let t = status.tunnels.first(where: { $0.enabled && ($0.state == .dead || $0.state == .error) }) {
+            let text = t.state == .error ? "\(t.name): не поднялся" : "\(t.name): недоступен"
+            return ProblemRow(text: text, target: .tunnel(t.name))
+        }
+        return nil
     }
 }
