@@ -41,7 +41,7 @@ final class WindowState: ObservableObject {
     @Published var busy = false
     /// A newer release, shown as the lowest-priority banner.
     @Published var update: UpdateInfo?
-    /// Called when the user starts "Перечитать конфиг" (its result is not notified).
+    /// Called after the user's "Перечитать конфиг" RPC finished (its result is not notified).
     var onReload: (() -> Void)?
 
     struct Message: Equatable {
@@ -80,6 +80,7 @@ final class WindowState: ObservableObject {
         case .config:
             section = .tunnels
         case .daemon:
+            // Stays put: also the target of the update banner, which sits at the top of every section.
             break
         }
     }
@@ -121,9 +122,9 @@ final class WindowState: ObservableObject {
     }
 
     func reload() {
-        onReload?()
-        run { poller in
+        run { [weak self] poller in
             let (result, failure) = await poller.perform { try await $0.reload() }
+            self?.onReload?()
             if let failure { return Message(text: failure, isError: true) }
             guard let result else { return nil }
             if result.tunnels.isEmpty { return Message(text: "Применено", isError: false) }

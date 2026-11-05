@@ -25,8 +25,18 @@ public struct NotificationPlanner: Equatable, Sendable {
     /// Last notification time per tunnel name (anti-flap).
     public var lastNotified: [String: Date]
 
+    /// Set by `noteOwnReload()`; consumed by the next `plan` call.
+    public private(set) var ownReloadPending = false
+
     public init(lastNotified: [String: Date] = [:]) {
         self.lastNotified = lastNotified
+    }
+
+    /// The user's own "Перечитать конфиг" has finished (call after the RPC completes). The next
+    /// `plan` drops the config-error event and the tunnel `dead`/`error` events it caused (the
+    /// window already shows the result), before events are merged.
+    public mutating func noteOwnReload() {
+        ownReloadPending = true
     }
 
     /// Plans notifications for one poll.
@@ -41,17 +51,21 @@ public struct NotificationPlanner: Equatable, Sendable {
     ///   - a tunnel went `dead`/`error` while enabled and rules moved to a fallback or reserve
     ///     with `reason: dead` -> "nl не отвечает", body "youtube, ai → de" (`.tunnel`);
     ///   - recovery of such a tunnel -> "nl снова работает" (`.tunnel`);
-    ///   - `config_error_count` grew: "Изменения конфига не применены: N ошибок…" when `prev`
-    ///     was `ready`; "wgplex запущен без туннелей: конфиг с ошибками" when the daemon has
-    ///     just started (`prev` not `ready`) (`.config`);
+    ///   - config errors (`config_error_count` > 0) and the count grew or `config_errors` changed
+    ///     (so a repeated failed reload with another text counts too): "wgplex запущен без туннелей:
+    ///     конфиг с ошибками" when `next.configured == false`, otherwise "Изменения конфига не
+    ///     применены: N ошибок…" (`.config`);
     ///   - `ready` -> `notRunning` "wgplex не работает"; back to `ready` -> "wgplex снова работает" (`.daemon`).
     ///   Silent: pause, enable/disable, rules with `reason: disabled|paused`, `notInstalled`/`outdated`,
     ///   and the same tunnel again within `flapInterval` of its last notification (updates `lastNotified`
-    ///   only when a notification is produced).
+    ///   only when a notification is produced), and the config/`dead` events caused by the user's own
+    ///   reload (`noteOwnReload()`), dropped before merging.
     public mutating func plan(prev: EngineState?, next: EngineState, now: Date) -> [AppNotification] {
         guard let prev else { return [] }
         var events: [AppNotification] = []
 
+        let ownReload = ownReloadPending
+        ownReloadPending = false
         let prevStatus = Self.status(of: prev)
         let nextStatus = Self.status(of: next)
 
@@ -62,6 +76,7 @@ public struct NotificationPlanner: Equatable, Sendable {
                 let nowDown = Self.affectedRules(of: t.name, in: nextStatus)
                 var event: AppNotification?
                 if let nowDown, wasDown == nil {
+                    if ownReload { continue }
                     let targets = Self.unique(nowDown.map { $0.tunnel ?? Self.fallbackText($0) })
                     event = AppNotification(
                         title: "\(t.name) не отвечает",
@@ -86,16 +101,20 @@ public struct NotificationPlanner: Equatable, Sendable {
         }
 
         // Config errors.
-        if let n = nextStatus?.configErrorCount, n > 0 {
-            if let p = prevStatus {
-                if n > p.configErrorCount {
+        if let ns = nextStatus, ns.configErrorCount > 0, !ownReload {
+            let n = ns.configErrorCount
+            let changed = prevStatus.map {
+                n > $0.configErrorCount || ns.configErrors != $0.configErrors
+            } ?? true
+            if changed {
+                if ns.configured {
                     events.append(AppNotification(
                         title: "Изменения конфига не применены: \(Self.errors(n))",
                         body: "Работает прежний конфиг", target: .config))
+                } else {
+                    events.append(AppNotification(
+                        title: "wgplex запущен без туннелей: конфиг с ошибками", body: "", target: .config))
                 }
-            } else {
-                events.append(AppNotification(
-                    title: "wgplex запущен без туннелей: конфиг с ошибками", body: "", target: .config))
             }
         }
 

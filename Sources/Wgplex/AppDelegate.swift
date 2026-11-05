@@ -3,10 +3,17 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: StatusController?
+    /// Created before launch finishes: the notification center delegate must be set by then,
+    /// or a click that launched the app is lost.
+    private var notifier: Notifier?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        notifier = Notifier()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
-        controller = StatusController()
+        if let notifier { controller = StatusController(notifier: notifier) }
     }
 
     @objc private func openSettings() { controller?.openSettings() }

@@ -13,7 +13,7 @@ final class StatusController: NSObject, NSMenuDelegate {
     private lazy var window = WindowController(poller: poller)
     private let settings = Settings()
     private let loginItem = LoginItem()
-    private let notifier = Notifier()
+    private let notifier: Notifier
     private lazy var updater = Updater(settings: settings)
     private lazy var settingsWindow = SettingsController(
         settings: settings, loginItem: loginItem,
@@ -22,8 +22,6 @@ final class StatusController: NSObject, NSMenuDelegate {
     private var planner = NotificationPlanner()
     /// Previous poll for the planner; nil until the first one.
     private var prevState: EngineState?
-    /// When the user last ran "Перечитать конфиг": its config errors are not notified.
-    private var ownReloadAt: Date?
     /// Nil until the first poll answers.
     private var state: EngineState?
     private var model: MenuModel?
@@ -37,7 +35,8 @@ final class StatusController: NSObject, NSMenuDelegate {
         var errorText: String?
     }
 
-    override init() {
+    init(notifier: Notifier) {
+        self.notifier = notifier
         super.init()
         menu.delegate = self
         menu.autoenablesItems = false
@@ -46,7 +45,7 @@ final class StatusController: NSObject, NSMenuDelegate {
         rebuild()
         poller.onState = { [weak self] in self?.apply($0) }
         notifier.onOpen = { [weak self] in self?.openWindow($0) }
-        window.state.onReload = { [weak self] in self?.ownReloadAt = Date() }
+        window.state.onReload = { [weak self] in self?.planner.noteOwnReload() }
         updater.onUpdate = { [weak self] in self?.window.state.update = $0 }
         updater.onNotify = { [weak self] in
             guard let self else { return }
@@ -84,8 +83,7 @@ final class StatusController: NSObject, NSMenuDelegate {
         let planned = planner.plan(prev: prevState, next: new, now: now)
         prevState = new
         if settings.notifications {
-            let ownReload = ownReloadAt.map { now.timeIntervalSince($0) < 15 } ?? false
-            for n in planned where !(ownReload && n.target == .config) { notifier.post(n) }
+            for n in planned { notifier.post(n) }
         }
         state = new
         window.state.update(new)

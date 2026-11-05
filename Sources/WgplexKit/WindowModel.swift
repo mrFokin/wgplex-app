@@ -139,6 +139,9 @@ public struct WindowModel: Equatable, Sendable {
     ///
     /// - Parameters:
     ///   - state: engine state from `Engine.locate`.
+    ///   - update: a newer release. Shown as `.updateAvailable` only when no other banner applies
+    ///     (lowest priority, after `ruleFallback`) and the engine state is `ready`; text
+    ///     "Доступна новая версия Wgplex <version>". Nil: no update banner.
     ///   - startsOnResume: tunnels for which `tunnel.enable` returned `starts_on_resume`.
     ///   - now: reference time for the handshake age.
     public static func make(
@@ -147,13 +150,8 @@ public struct WindowModel: Equatable, Sendable {
         make(from: state, update: nil, startsOnResume: startsOnResume, now: now)
     }
 
-    /// Same as above, plus the update banner.
-    ///
-    /// - Parameter update: a newer release. Shown as `.updateAvailable` only when no other
-    ///   banner applies (lowest priority, after `ruleFallback`) and the engine state is `ready`;
-    ///   text "Доступна новая версия Wgplex <version>". Nil: identical to the call without it.
     public static func make(
-        from state: EngineState, update: UpdateInfo?, startsOnResume: Set<String> = [],
+        from state: EngineState, update: UpdateInfo? = nil, startsOnResume: Set<String> = [],
         now: Date = Date()
     ) -> WindowModel {
         var model = makeBase(from: state, startsOnResume: startsOnResume, now: now)

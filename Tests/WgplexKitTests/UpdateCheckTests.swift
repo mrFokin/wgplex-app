@@ -112,18 +112,19 @@ final class UpdateCheckTests: XCTestCase {
     func testCheckFindsNewerVersion() async {
         var c = UpdateCheck()
         let u = await c.check(now: now, current: "1.2.0") { self.release() }
-        XCTAssertEqual(u?.version, "1.3.0")
+        guard case .available(let info) = u else { return XCTFail("\(u)") }
+        XCTAssertEqual(info.version, "1.3.0")
         XCTAssertEqual(c.lastCheck, now)
     }
 
     func testCheckUpToDate() async {
         var c = UpdateCheck()
         let same = await c.check(now: now, current: "1.3.0") { self.release() }
-        XCTAssertNil(same)
+        XCTAssertEqual(same, .upToDate)
         XCTAssertEqual(c.lastCheck, now)
         var c2 = UpdateCheck()
         let older = await c2.check(now: now, current: "2.0.0") { self.release() }
-        XCTAssertNil(older)
+        XCTAssertEqual(older, .upToDate)
     }
 
     func testCheckNotDueDoesNotFetch() async {
@@ -133,7 +134,7 @@ final class UpdateCheckTests: XCTestCase {
             called = true
             return self.release()
         }
-        XCTAssertNil(u)
+        XCTAssertEqual(u, .notDue)
         XCTAssertFalse(called)
         XCTAssertEqual(c.lastCheck, now.addingTimeInterval(-3600))
     }
@@ -141,7 +142,7 @@ final class UpdateCheckTests: XCTestCase {
     func testCheckDueAfterADay() async {
         var c = UpdateCheck(lastCheck: now.addingTimeInterval(-86_400))
         let u = await c.check(now: now, current: "1.0.0") { self.release() }
-        XCTAssertNotNil(u)
+        guard case .available = u else { return XCTFail("\(u)") }
         XCTAssertEqual(c.lastCheck, now)
     }
 
@@ -156,7 +157,7 @@ final class UpdateCheckTests: XCTestCase {
         for (why, fetch) in fetchers {
             var c = UpdateCheck()
             let u = await c.check(now: now, current: "1.0.0", fetch: fetch)
-            XCTAssertNil(u, why)
+            XCTAssertEqual(u, .failed, why)
             XCTAssertEqual(c.lastCheck, now, why)
             XCTAssertFalse(c.isDue(now: now.addingTimeInterval(3600)), why)
         }

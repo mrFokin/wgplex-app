@@ -16,6 +16,18 @@ public struct UpdateInfo: Equatable, Sendable {
     }
 }
 
+/// Outcome of `UpdateCheck.check`.
+public enum UpdateCheckResult: Equatable, Sendable {
+    /// Less than `interval` since the last check: nothing was fetched.
+    case notDue
+    /// Network error, bad status or unparsable body: keep what was stored.
+    case failed
+    /// The answer is valid and there is no newer release.
+    case upToDate
+    /// A newer release.
+    case available(UpdateInfo)
+}
+
 /// Update check against `GET https://api.github.com/repos/mrFokin/wgplex-app/releases/latest`.
 /// Pure logic: the network is a closure, the clock is a parameter.
 public struct UpdateCheck: Equatable, Sendable {
@@ -70,18 +82,16 @@ public struct UpdateCheck: Equatable, Sendable {
 
     /// Runs one check if due: records `lastCheck = now` (also on failure, so a broken
     /// network is retried only after the interval), loads and parses via `fetch`.
-    /// - Returns: the update when it is newer than `current`; nil when not due, up to date,
-    ///   or on any failure (network error, 404 because the repository has no releases yet,
-    ///   bad JSON) — failures are silent.
+    /// - Returns: `.available` when newer than `current`; `.upToDate` for a valid answer without
+    ///   a newer release; `.failed` on any failure (network error, 404 because the repository
+    ///   has no releases yet, bad JSON) — silent, stored data stays; `.notDue` when not due.
     public mutating func check(
         now: Date, current: String = appVersion, fetch: () async throws -> Data
-    ) async -> UpdateInfo? {
-        guard isDue(now: now) else { return nil }
+    ) async -> UpdateCheckResult {
+        guard isDue(now: now) else { return .notDue }
         lastCheck = now
-        guard let data = try? await fetch(), let info = Self.parse(data),
-            Self.isNewer(info.version, than: current)
-        else { return nil }
-        return info
+        guard let data = try? await fetch(), let info = Self.parse(data) else { return .failed }
+        return Self.isNewer(info.version, than: current) ? .available(info) : .upToDate
     }
 
     /// For the notification: returns true once per version and remembers it in

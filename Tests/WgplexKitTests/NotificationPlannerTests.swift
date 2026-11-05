@@ -11,11 +11,13 @@ final class NotificationPlannerTests: XCTestCase {
 
     private func ready(
         tunnels: [TunnelStatus] = [], rules: [RuleStatus] = [], paused: Bool = false,
-        errors: Int = 0, canControl: Bool = true
+        errors: Int = 0, canControl: Bool = true, configured: Bool = true,
+        configErrors: [String] = []
     ) -> EngineState {
         .ready(
             Status(
-                canControl: canControl, paused: paused, configErrorCount: errors, tunnels: tunnels, rules: rules))
+                canControl: canControl, configured: configured, paused: paused, configErrors: configErrors,
+                configErrorCount: errors, tunnels: tunnels, rules: rules))
     }
 
     /// Healthy state: nl up, rule goes through nl.
@@ -156,15 +158,30 @@ final class NotificationPlannerTests: XCTestCase {
     // design 7: same or lower count is silent
     func testConfigErrorCountNotGrown() {
         var p = NotificationPlanner()
-        XCTAssertEqual(plan(&p, ready(errors: 2), ready(errors: 2)), [])
+        XCTAssertEqual(plan(&p, ready(errors: 2, configErrors: ["a", "b"]), ready(errors: 2, configErrors: ["a", "b"])), [])
         XCTAssertEqual(plan(&p, ready(errors: 2), ready(errors: 1)), [])
         XCTAssertEqual(plan(&p, ready(errors: 2), ready(errors: 0)), [])
+    }
+
+    // a repeated failed reload with another error text is announced again
+    func testConfigErrorsChangedSameCount() {
+        var p = NotificationPlanner()
+        let n = plan(&p, ready(errors: 1, configErrors: ["x"]), ready(errors: 1, configErrors: ["y"]))
+        XCTAssertEqual(n.count, 1)
+        XCTAssertTrue(n.first?.title.hasPrefix("Изменения конфига не применены") == true, "\(n)")
+    }
+
+    // start vs reload is decided by next.configured, not by prev
+    func testConfigErrorStartedWithoutTunnelsFromReadyState() {
+        var p = NotificationPlanner()
+        let n = plan(&p, ready(errors: 0, configured: true), ready(errors: 1, configured: false))
+        XCTAssertEqual(n.first?.title, "wgplex запущен без туннелей: конфиг с ошибками")
     }
 
     // design 7: config error at daemon start
     func testConfigErrorAtStart() {
         var p = NotificationPlanner()
-        let n = plan(&p, .notRunning, ready(errors: 1))
+        let n = plan(&p, .notRunning, ready(errors: 1, configured: false))
         XCTAssertEqual(n.count, 1)
         XCTAssertEqual(n.first?.title, "wgplex запущен без туннелей: конфиг с ошибками")
         XCTAssertEqual(n.first?.target, .config)
@@ -223,7 +240,32 @@ final class NotificationPlannerTests: XCTestCase {
         var p = NotificationPlanner()
         let n = plan(&p, prev, next)
         XCTAssertEqual(n.count, 1, "\(n)")
-        XCTAssertTrue([ProblemTarget.tunnel("nl"), .config].contains(n[0].target))
+        XCTAssertEqual(n[0].target, .tunnel("nl"))
+        XCTAssertEqual(n[0].title, "nl не отвечает")
+        XCTAssertTrue(n[0].body.contains("Изменения конфига не применены: 2 ошибки"), n[0].body)
+    }
+
+    // own reload: config event and dead events are dropped once, before merging
+    func testOwnReloadDropsConfigAndDeadEvents() {
+        var p = NotificationPlanner()
+        p.noteOwnReload()
+        XCTAssertEqual(plan(&p, ready(errors: 0), ready(errors: 2)), [])
+        // consumed: the next poll is not filtered
+        XCTAssertEqual(plan(&p, ready(errors: 0), ready(errors: 2)).count, 1)
+
+        p.noteOwnReload()
+        let prev = healthy
+        XCTAssertEqual(plan(&p, prev, nlDeadOnBackup), [])
+        XCTAssertTrue(p.lastNotified.isEmpty)
+        XCTAssertEqual(plan(&p, healthy, nlDeadOnBackup, at: t0.addingTimeInterval(1)).count, 1)
+    }
+
+    // the filter drops events before merging: a surviving event is not hidden by a dropped one
+    func testOwnReloadKeepsOtherEvents() {
+        var p = NotificationPlanner()
+        p.noteOwnReload()
+        let n = plan(&p, healthy, .notRunning)
+        XCTAssertEqual(n.first?.title, "wgplex не работает")
     }
 
     func testTwoTunnelsDeadInOnePollMerge() {

@@ -61,12 +61,13 @@ final class Updater {
         running = true
         var local = check
         Task {
-            let info = await local.check(now: Date(), fetch: Self.fetch)
+            let result = await local.check(now: Date(), fetch: Self.fetch)
             running = false
             guard settings.checkUpdates else { return }
             check = local
             defaults.set(check.lastCheck, forKey: "update.lastCheck")
-            if let info {
+            switch result {
+            case .available(let info):
                 found = info
                 defaults.set(info.version, forKey: "update.version")
                 defaults.set(info.url, forKey: "update.url")
@@ -74,6 +75,13 @@ final class Updater {
                     defaults.set(check.notifiedVersion, forKey: "update.notifiedVersion")
                     onNotify?(info)
                 }
+            case .upToDate:
+                // A valid answer without a newer release (e.g. a withdrawn one): forget the old find.
+                found = nil
+                defaults.removeObject(forKey: "update.version")
+                defaults.removeObject(forKey: "update.url")
+            case .failed, .notDue:
+                break
             }
             publish()
         }
