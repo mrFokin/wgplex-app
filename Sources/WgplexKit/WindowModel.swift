@@ -156,8 +156,12 @@ public struct WindowModel: Equatable, Sendable {
         from state: EngineState, update: UpdateInfo?, startsOnResume: Set<String> = [],
         now: Date = Date()
     ) -> WindowModel {
-        let model = makeBase(from: state, startsOnResume: startsOnResume, now: now)
-        if update != nil { fatalError("not implemented") }
+        var model = makeBase(from: state, startsOnResume: startsOnResume, now: now)
+        if let update, model.banner == nil, case .ready = state {
+            model.banner = Banner(
+                kind: .updateAvailable, text: "Доступна новая версия Wgplex \(update.version)",
+                target: .daemon, update: update)
+        }
         return model
     }
 

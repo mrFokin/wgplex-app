@@ -35,7 +35,13 @@ public struct UpdateCheck: Equatable, Sendable {
     /// Parses the `releases/latest` body. Reads `tag_name` (leading "v" stripped) and `html_url`.
     /// - Returns: nil for invalid JSON, a missing/empty field, or a non-numeric version.
     public static func parse(_ data: Data) -> UpdateInfo? {
-        fatalError("not implemented")
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            var tag = obj["tag_name"] as? String, let url = obj["html_url"] as? String,
+            !url.isEmpty
+        else { return nil }
+        if tag.hasPrefix("v") { tag.removeFirst() }
+        guard parseVersion(tag) != nil else { return nil }
+        return UpdateInfo(version: tag, url: url)
     }
 
     /// Whether `candidate` is newer than `current` (`appVersion` by default).
@@ -43,13 +49,23 @@ public struct UpdateCheck: Equatable, Sendable {
     /// a pre-release suffix after "-" ("0.1.0-dev") sorts below the same release version.
     /// An unparsable version is never newer.
     public static func isNewer(_ candidate: String, than current: String = appVersion) -> Bool {
-        fatalError("not implemented")
+        guard let c = parseVersion(candidate), let cur = parseVersion(current) else { return false }
+        let n = max(c.parts.count, cur.parts.count)
+        for i in 0..<n {
+            let a = i < c.parts.count ? c.parts[i] : 0
+            let b = i < cur.parts.count ? cur.parts[i] : 0
+            if a != b { return a > b }
+        }
+        // Equal numbers: a pre-release sorts below the release.
+        return !c.pre && cur.pre
     }
 
     /// True when `lastCheck` is nil or at least `interval` seconds before `now`.
     /// A `lastCheck` in the future (clock moved back) counts as due.
     public func isDue(now: Date) -> Bool {
-        fatalError("not implemented")
+        guard let last = lastCheck else { return true }
+        let elapsed = now.timeIntervalSince(last)
+        return elapsed >= Self.interval || elapsed < 0
     }
 
     /// Runs one check if due: records `lastCheck = now` (also on failure, so a broken
@@ -60,12 +76,31 @@ public struct UpdateCheck: Equatable, Sendable {
     public mutating func check(
         now: Date, current: String = appVersion, fetch: () async throws -> Data
     ) async -> UpdateInfo? {
-        fatalError("not implemented")
+        guard isDue(now: now) else { return nil }
+        lastCheck = now
+        guard let data = try? await fetch(), let info = Self.parse(data),
+            Self.isNewer(info.version, than: current)
+        else { return nil }
+        return info
     }
 
     /// For the notification: returns true once per version and remembers it in
     /// `notifiedVersion`; false for the same version again. A newer version notifies again.
     public mutating func shouldNotify(_ update: UpdateInfo) -> Bool {
-        fatalError("not implemented")
+        guard notifiedVersion != update.version else { return false }
+        notifiedVersion = update.version
+        return true
+    }
+
+    /// Numeric components and whether a "-suffix" is present; nil when unparsable.
+    private static func parseVersion(_ v: String) -> (parts: [Int], pre: Bool)? {
+        let pieces = v.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let core = pieces.first, !core.isEmpty else { return nil }
+        var parts: [Int] = []
+        for p in core.split(separator: ".", omittingEmptySubsequences: false) {
+            guard !p.isEmpty, p.allSatisfy({ $0.isASCII && $0.isNumber }), let n = Int(p) else { return nil }
+            parts.append(n)
+        }
+        return (parts, pieces.count > 1)
     }
 }
