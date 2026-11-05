@@ -16,7 +16,7 @@ struct DiagnosticsView: View {
                 TextField("Домен или IP-адрес", text: $query)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(explain)
-                Button("Объяснить", action: explain)
+                Button("Проверить", action: explain)
                     .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty || loading)
             }
             if let explainText {
@@ -39,13 +39,14 @@ struct DiagnosticsView: View {
                     TableColumn("Цель") { Text(Self.targetText($0.value.target)) }
                     TableColumn("Туннель") { Text($0.value.tunnel ?? "—") }
                     TableColumn("Источник") { Text(Self.sourceText($0.value.source)) }
-                    TableColumn("Имена") { Text($0.value.names.joined(separator: ", ")) }
+                    TableColumn("Имена") { Text($0.value.names.joined(separator: "\n")).lineLimit(nil).textSelection(.enabled) }
                 }
             } else {
                 Spacer()
             }
         }
         .padding(12)
+        .task { loadRoutes() }
     }
 
     private func explain() {
