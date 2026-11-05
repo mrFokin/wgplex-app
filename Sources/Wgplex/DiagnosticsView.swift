@@ -16,7 +16,7 @@ struct DiagnosticsView: View {
                 TextField("Домен или IP-адрес", text: $query)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(explain)
-                Button("Объяснить", action: explain)
+                Button("Проверить", action: explain)
                     .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty || loading)
             }
             if let explainText {
@@ -46,6 +46,7 @@ struct DiagnosticsView: View {
             }
         }
         .padding(12)
+        .task { loadRoutes() }
     }
 
     private func explain() {
