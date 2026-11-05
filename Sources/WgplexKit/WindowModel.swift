@@ -1,12 +1,14 @@
 import Foundation
 
 /// Kind of the window banner (design 5). Priority, highest first:
-/// `configError`, `daemonUnavailable`, `paused`, `ruleFallback`.
+/// `configError`, `daemonUnavailable`, `paused`, `ruleFallback`, `updateAvailable`.
 public enum BannerKind: Equatable, Sendable {
     case configError
     case daemonUnavailable
     case paused
     case ruleFallback
+    /// "Доступна новая версия": below all problems; carries `Banner.update`.
+    case updateAvailable
 }
 
 /// The banner on top of the window.
@@ -16,11 +18,15 @@ public struct Banner: Equatable, Sendable {
     public var text: String
     /// Section the banner leads to.
     public var target: ProblemTarget
+    /// Version, release url and upgrade command; set only for `.updateAvailable`
+    /// (its `target` is not meaningful then).
+    public var update: UpdateInfo?
 
-    public init(kind: BannerKind, text: String, target: ProblemTarget) {
+    public init(kind: BannerKind, text: String, target: ProblemTarget, update: UpdateInfo? = nil) {
         self.kind = kind
         self.text = text
         self.target = target
+        self.update = update
     }
 }
 
@@ -137,6 +143,26 @@ public struct WindowModel: Equatable, Sendable {
     ///   - now: reference time for the handshake age.
     public static func make(
         from state: EngineState, startsOnResume: Set<String> = [], now: Date = Date()
+    ) -> WindowModel {
+        make(from: state, update: nil, startsOnResume: startsOnResume, now: now)
+    }
+
+    /// Same as above, plus the update banner.
+    ///
+    /// - Parameter update: a newer release. Shown as `.updateAvailable` only when no other
+    ///   banner applies (lowest priority, after `ruleFallback`) and the engine state is `ready`;
+    ///   text "Доступна новая версия Wgplex <version>". Nil: identical to the call without it.
+    public static func make(
+        from state: EngineState, update: UpdateInfo?, startsOnResume: Set<String> = [],
+        now: Date = Date()
+    ) -> WindowModel {
+        let model = makeBase(from: state, startsOnResume: startsOnResume, now: now)
+        if update != nil { fatalError("not implemented") }
+        return model
+    }
+
+    private static func makeBase(
+        from state: EngineState, startsOnResume: Set<String>, now: Date
     ) -> WindowModel {
         let status: Status
         switch state {
