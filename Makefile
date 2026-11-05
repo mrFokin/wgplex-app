@@ -1,4 +1,4 @@
-.PHONY: check build test clean
+.PHONY: check build test dmg clean
 
 check: build test
 
@@ -8,5 +8,8 @@ build:
 test:
 	swift test
 
+dmg:
+	scripts/dmg.sh
+
 clean:
-	rm -rf .build
+	rm -rf .build dist

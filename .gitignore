@@ -1,4 +1,5 @@
 .build/
 .claude/worktrees/
 *.dmg
+dist/
 scripts/vm-check/shots/

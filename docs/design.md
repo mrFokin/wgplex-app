@@ -12,7 +12,7 @@ Wgplex.app — меню-приложение macOS, клиент публичн�
 
 ## 2. Поставка
 
-- **Основной канал — cask `wgplex-app`** в `mrFokin/homebrew-tap`: `depends_on formula: "mrfokin/tap/wgplex"`, `depends_on macos: ">= :ventura"`, `.dmg` из релиза GitHub. Запасной — тот же `.dmg` вручную (universal, ad-hoc подпись).
+- **Основной канал — cask `wgplex-app`** в `mrFokin/homebrew-tap`: `depends_on formula: "mrfokin/tap/wgplex"`, `depends_on macos: :ventura` (не ниже Ventura; `brew style` не принимает `">= :ventura"`), `.dmg` из релиза GitHub. Запасной — тот же `.dmg` вручную (universal, ad-hoc подпись).
 - Установка: `brew trust mrfokin/tap`, затем `brew install --cask mrfokin/tap/wgplex-app`. Homebrew 7 доверяет по полному имени только самому cask, а формулу-зависимость из того же tap без `brew trust` не загружает (M0, K4, K11).
 - Developer ID пока нет. Первый запуск (M0, K6, K7): диалог «"Wgplex" Not Opened — Apple could not verify…», кнопка «Done» (не «Move to Trash»); затем «Системные настройки → Конфиденциальность и безопасность» → «"Wgplex" was blocked to protect your Mac» → «Open Anyway» → пароль администратора. Тексты — в README. С подписью меняется только этап сборки.
 - **Обновление через `brew upgrade --cask` повторного разрешения не требует:** Homebrew сохраняет каталог `.app` и переносит одобрение (M0, K8, K9). Ручная замена из `.dmg` — требует «Open Anyway» снова (M0, K10).
