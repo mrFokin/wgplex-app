@@ -5,8 +5,11 @@
 set -euo pipefail
 out=${1:?usage: make-app.sh <output-dir>}
 cd "$(dirname "$0")/../.."
-swift build >&2
-bin=$(swift build --show-bin-path)/Wgplex
+# SWIFT_SDK: optional SDK path (VM with only CLT needs the 26.5 SDK, see run-gui.sh)
+sdk=()
+[ -n "${SWIFT_SDK:-}" ] && sdk=(--sdk "$SWIFT_SDK")
+swift build ${sdk[@]+"${sdk[@]}"} >&2
+bin=$(swift build ${sdk[@]+"${sdk[@]}"} --show-bin-path)/Wgplex
 app="$out/Wgplex.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
