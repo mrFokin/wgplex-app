@@ -39,7 +39,7 @@ struct DiagnosticsView: View {
                     TableColumn("Цель") { Text(Self.targetText($0.value.target)) }
                     TableColumn("Туннель") { Text($0.value.tunnel ?? "—") }
                     TableColumn("Источник") { Text(Self.sourceText($0.value.source)) }
-                    TableColumn("Имена") { Text($0.value.names.joined(separator: ", ")) }
+                    TableColumn("Имена") { Text($0.value.names.joined(separator: "\n")).lineLimit(nil).textSelection(.enabled) }
                 }
             } else {
                 Spacer()
