@@ -10,15 +10,16 @@ final class StatusController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
     private let poller = StatusPoller()
-    private lazy var window = WindowController(poller: poller)
     private let settings = Settings()
     private let loginItem = LoginItem()
     private let notifier: Notifier
     private lazy var updater = Updater(settings: settings)
-    private lazy var settingsWindow = SettingsController(
-        settings: settings, loginItem: loginItem,
-        onNotificationsOn: { [weak self] in self?.notifier.requestAuthorization() },
-        onUpdatesChanged: { [weak self] in self?.updater.settingsChanged() })
+    private lazy var window = WindowController(
+        poller: poller,
+        settingsView: SettingsView(
+            settings: settings, loginItem: loginItem,
+            onNotificationsOn: { [weak self] in self?.notifier.requestAuthorization() },
+            onUpdatesChanged: { [weak self] in self?.updater.settingsChanged() }))
     private var planner = NotificationPlanner()
     /// Previous poll for the planner; nil until the first one.
     private var prevState: EngineState?
@@ -56,7 +57,7 @@ final class StatusController: NSObject, NSMenuDelegate {
         DispatchQueue.main.async { [weak self] in self?.firstRun() }
     }
 
-    func openSettings() { settingsWindow.show() }
+    func openSettings() { window.show(section: .settings) }
 
     /// One question on the very first launch: login item and notification permission.
     /// Without an app bundle neither exists, so nothing is asked and the flag stays unset.

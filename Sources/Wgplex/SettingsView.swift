@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Settings window content (design 5): launch at login, notifications, update check.
+/// Settings section of the window (design 5): launch at login, notifications, update check.
 struct SettingsView: View {
     @ObservedObject var settings: Settings
     @ObservedObject var loginItem: LoginItem
@@ -41,7 +41,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .frame(width: 380, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { loginItem.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             loginItem.refresh()

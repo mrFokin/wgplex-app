@@ -3,7 +3,7 @@ import WgplexKit
 
 /// Sidebar sections of the window (design 5).
 enum WindowSection: String, CaseIterable, Identifiable {
-    case tunnels, rules, diagnostics, logs
+    case tunnels, rules, diagnostics, logs, settings
 
     var id: String { rawValue }
 
@@ -13,6 +13,7 @@ enum WindowSection: String, CaseIterable, Identifiable {
         case .rules: return "Правила"
         case .diagnostics: return "Диагностика"
         case .logs: return "Логи"
+        case .settings: return "Настройки"
         }
     }
 
@@ -22,6 +23,7 @@ enum WindowSection: String, CaseIterable, Identifiable {
         case .rules: return "list.bullet"
         case .diagnostics: return "stethoscope"
         case .logs: return "doc.text"
+        case .settings: return "gearshape"
         }
     }
 }
