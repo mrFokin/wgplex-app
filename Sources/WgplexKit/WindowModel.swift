@@ -138,19 +138,128 @@ public struct WindowModel: Equatable, Sendable {
     public static func make(
         from state: EngineState, startsOnResume: Set<String> = [], now: Date = Date()
     ) -> WindowModel {
-        fatalError("not implemented")
+        let status: Status
+        switch state {
+        case .notInstalled:
+            return unavailable("wgplex не установлен")
+        case .notRunning:
+            return unavailable("Демон не запущен")
+        case .outdated:
+            return unavailable("Обновите wgplex")
+        case .ready(let s):
+            status = s
+        }
+
+        let tunnels = status.tunnels.map { t -> TunnelDetail in
+            let first = t.peers.first
+            let handshake: String?
+            let traffic: String?
+            if t.peers.isEmpty {
+                handshake = nil
+                traffic = nil
+            } else {
+                let last = t.peers.compactMap(\.lastHandshake).max()
+                handshake = formatHandshake(secondsAgo: last.map { max(0, Int(now.timeIntervalSince($0))) })
+                let rx = t.peers.reduce(0) { $0 + $1.rxBytes }
+                let tx = t.peers.reduce(0) { $0 + $1.txBytes }
+                traffic = "↓ \(formatBytes(rx)) ↑ \(formatBytes(tx))"
+            }
+            return TunnelDetail(
+                row: MenuModel.row(of: t, status: status, startsOnResume: startsOnResume),
+                endpoint: first?.endpoint, interface: t.interface, addresses: t.addresses,
+                handshakeText: handshake, trafficText: traffic, routeCount: t.routeCount,
+                checkText: t.check.map(checkText), error: t.error, reason: t.reason)
+        }
+
+        let rules = status.rules.map { r -> RuleRow in
+            let state: String
+            if r.inFallback {
+                state = "без туннеля"
+            } else if r.degraded {
+                state = "на резерве"
+            } else if r.via.isEmpty {
+                state = "напрямую"
+            } else {
+                state = "ok"
+            }
+            return RuleRow(
+                index: r.index, services: r.services, via: r.via, tunnel: r.tunnel, stateText: state,
+                isProblem: MenuModel.isProblem(r), reasonText: reasonText(r.reason))
+        }
+
+        var banner: Banner?
+        if status.configErrorCount > 0 {
+            banner = Banner(kind: .configError, text: "ошибка конфига", target: .config)
+        } else if status.paused {
+            banner = Banner(kind: .paused, text: "Приостановлено", target: .config)
+        } else if let p = MenuModel.problem(of: status), case .rule = p.target {
+            banner = Banner(kind: .ruleFallback, text: p.text, target: p.target)
+        }
+
+        return WindowModel(
+            banner: banner,
+            actions: ActionBar(
+                pauseTitle: status.paused ? "Возобновить" : "Приостановить",
+                pauseEnabled: status.canControl, disableAllEnabled: status.canControl,
+                reloadEnabled: status.canControl),
+            tunnels: tunnels, rules: rules)
+    }
+
+    private static func unavailable(_ text: String) -> WindowModel {
+        WindowModel(
+            banner: Banner(kind: .daemonUnavailable, text: text, target: .daemon),
+            actions: ActionBar(
+                pauseTitle: "Приостановить", pauseEnabled: false, disableAllEnabled: false,
+                reloadEnabled: false),
+            tunnels: [], rules: [])
+    }
+
+    private static func checkText(_ c: CheckStatus) -> String {
+        if c.fails > 0 { return "сбоев: \(c.fails)" }
+        if let rtt = c.rttMs { return "ok, \(Int(rtt.rounded())) мс" }
+        return "ok"
+    }
+
+    private static func reasonText(_ r: RuleReason?) -> String? {
+        switch r {
+        case .dead: return "туннель недоступен"
+        case .disabled: return "туннель выключен"
+        case .paused: return "пауза"
+        case nil, .unknown: return nil
+        }
     }
 
     /// Human-readable size: "0 Б", "512 Б", "1,5 КБ", "12 МБ", "3,2 ГБ" (base 1024,
     /// one decimal below 10 units, decimal comma).
     public static func formatBytes(_ bytes: Int) -> String {
-        fatalError("not implemented")
+        let units = ["Б", "КБ", "МБ", "ГБ", "ТБ"]
+        var value = Double(max(0, bytes))
+        var unit = 0
+        while value >= 1024 && unit < units.count - 1 {
+            value /= 1024
+            unit += 1
+        }
+        if unit == 0 { return "\(Int(value)) \(units[0])" }
+        // Rounding may carry into the next unit ("1024 КБ" -> "1,0 МБ").
+        if value.rounded() >= 1024 && unit < units.count - 1 {
+            value /= 1024
+            unit += 1
+        }
+        if value < 9.95 {
+            let tenths = Int((value * 10).rounded())
+            return "\(tenths / 10),\(tenths % 10) \(units[unit])"
+        }
+        return "\(Int(value.rounded())) \(units[unit])"
     }
 
     /// "N с назад" (N seconds, minutes and hours may be folded into larger units),
     /// "нет" when nil (never).
     public static func formatHandshake(secondsAgo: Int?) -> String {
-        fatalError("not implemented")
+        guard let s = secondsAgo else { return "нет" }
+        let n = max(0, s)
+        if n < 60 { return "\(n) с назад" }
+        if n < 3600 { return "\(n / 60) мин назад" }
+        return "\(n / 3600) ч назад"
     }
 }
 
@@ -165,11 +274,14 @@ public enum ConfigDirAccess: Equatable, Sendable {
     ///   - path: `config_dir` from the status.
     ///   - canRead: result of the readability check done by the caller.
     public static func describe(path: String, canRead: Bool) -> ConfigDirAccess {
-        fatalError("not implemented")
+        canRead ? .open(path) : .adminOnly(path)
     }
 
     /// "Конфиг правит администратор" for `adminOnly`; nil for `open`.
     public var note: String? {
-        fatalError("not implemented")
+        switch self {
+        case .open: return nil
+        case .adminOnly: return "Конфиг правит администратор"
+        }
     }
 }

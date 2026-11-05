@@ -160,13 +160,7 @@ public struct MenuModel: Equatable, Sendable {
         case .warn, .unknown: icon = .warn
         }
 
-        let tunnels = status.tunnels.map { t in
-            TunnelRow(
-                name: t.name, checked: t.enabled,
-                warn: !status.paused && t.enabled && (t.state == .dead || t.state == .error),
-                dimmed: status.paused && t.enabled, enabled: status.canControl,
-                startsOnResume: startsOnResume.contains(t.name) && status.paused)
-        }
+        let tunnels = status.tunnels.map { row(of: $0, status: status, startsOnResume: startsOnResume) }
 
         return MenuModel(
             icon: icon, tunnels: tunnels, problem: problem(of: status),
@@ -174,9 +168,17 @@ public struct MenuModel: Equatable, Sendable {
             pauseEnabled: status.canControl, paused: status.paused, unavailable: nil)
     }
 
+    static func row(of t: TunnelStatus, status: Status, startsOnResume: Set<String>) -> TunnelRow {
+        TunnelRow(
+            name: t.name, checked: t.enabled,
+            warn: !status.paused && t.enabled && (t.state == .dead || t.state == .error),
+            dimmed: status.paused && t.enabled, enabled: status.canControl,
+            startsOnResume: startsOnResume.contains(t.name) && status.paused)
+    }
+
     /// A rule is a problem when it is degraded or in fallback for a real cause;
     /// `paused` and `disabled` are intentional states.
-    private static func isProblem(_ rule: RuleStatus) -> Bool {
+    static func isProblem(_ rule: RuleStatus) -> Bool {
         guard rule.inFallback || rule.degraded else { return false }
         switch rule.reason {
         case nil, .dead, .unknown: return true
@@ -184,7 +186,7 @@ public struct MenuModel: Equatable, Sendable {
         }
     }
 
-    private static func problem(of status: Status) -> ProblemRow? {
+    static func problem(of status: Status) -> ProblemRow? {
         if status.configErrorCount > 0 {
             return ProblemRow(text: "ошибка конфига", target: .config)
         }
