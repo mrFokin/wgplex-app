@@ -59,7 +59,13 @@ To start the app at login for all users, an administrator can add a LaunchAgent 
 </plist>
 ```
 
-The file must be owned by `root:wheel` with mode `644`; it takes effect at the next login.
+Install it as an administrator (the file must be owned by `root:wheel` with mode `644`; it takes effect at the next login):
+
+```sh
+sudo cp io.github.mrfokin.wgplex.plist /Library/LaunchAgents/
+sudo chown root:wheel /Library/LaunchAgents/io.github.mrfokin.wgplex.plist
+sudo chmod 644 /Library/LaunchAgents/io.github.mrfokin.wgplex.plist
+```
 
 ## Update
 
@@ -67,7 +73,7 @@ The file must be owned by `root:wheel` with mode `644`; it takes effect at the n
 brew upgrade --cask wgplex-app
 ```
 
-Replacing the app manually from a `.dmg` requires "Open Anyway" again.
+`brew upgrade --cask` does not require "Open Anyway" again (design 2, M0 K8/K9). Replacing the app manually from a `.dmg` requires "Open Anyway" again.
 
 The app checks GitHub for the latest release once a day (can be disabled with "Проверять обновления" in Settings) and shows the `brew upgrade` command when a new version is out.
 
@@ -77,7 +83,7 @@ The app checks GitHub for the latest release once a day (can be disabled with "�
 brew uninstall --cask wgplex-app
 ```
 
-The cask's `zap` also removes the app's defaults (`brew uninstall --zap --cask wgplex-app`). The engine is separate: stop it with `sudo brew services stop --sudo-service-user=root wgplex` and remove it with `brew uninstall wgplex`. Quitting the app only closes the app; tunnels belong to the machine.
+The cask's `zap` also removes the app's defaults (`brew uninstall --zap --cask wgplex-app`). The engine is separate: stop it with `sudo brew services stop --sudo-service-user=root wgplex` and remove it with `brew uninstall wgplex`. If you installed the all-users LaunchAgent, remove it manually (the cask does not touch it): `sudo rm /Library/LaunchAgents/io.github.mrfokin.wgplex.plist`. Quitting the app only closes the app; tunnels belong to the machine.
 
 ## Build from source
 

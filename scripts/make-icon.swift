@@ -54,7 +54,6 @@ guard CommandLine.arguments.count == 2 else {
 let out = CommandLine.arguments[1]
 let dir = NSTemporaryDirectory() + "AppIcon-\(getpid()).iconset"
 try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-defer { try? FileManager.default.removeItem(atPath: dir) }
 for base in [16, 32, 128, 256, 512] {
     try render(base).write(to: URL(fileURLWithPath: "\(dir)/icon_\(base)x\(base).png"))
     try render(base * 2).write(to: URL(fileURLWithPath: "\(dir)/icon_\(base)x\(base)@2x.png"))
@@ -64,4 +63,5 @@ p.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
 p.arguments = ["-c", "icns", dir, "-o", out]
 try p.run()
 p.waitUntilExit()
+try? FileManager.default.removeItem(atPath: dir)
 exit(p.terminationStatus)
