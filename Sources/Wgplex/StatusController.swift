@@ -10,6 +10,7 @@ final class StatusController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
     private let poller = StatusPoller()
+    private lazy var window = WindowController(poller: poller)
     /// Nil until the first poll answers.
     private var state: EngineState?
     private var model: MenuModel?
@@ -38,6 +39,7 @@ final class StatusController: NSObject, NSMenuDelegate {
 
     private func apply(_ new: EngineState) {
         state = new
+        window.state.update(new)
         if case .ready(let s) = new, s.paused {} else { startsOnResume = [] }
         rebuild()
     }
@@ -77,7 +79,8 @@ final class StatusController: NSObject, NSMenuDelegate {
             if model.tunnels.isEmpty { add("Нет туннелей") }
             if let p = model.problem {
                 menu.addItem(.separator())
-                add("⚠ " + p.text)
+                let target = p.target
+                add("⚠ " + p.text) { [weak self] in self?.openWindow(target) }
             }
             menu.addItem(.separator())
             if let title = model.pauseTitle {
@@ -89,7 +92,7 @@ final class StatusController: NSObject, NSMenuDelegate {
             add(errorText)
         }
         menu.addItem(.separator())
-        if model.unavailable == nil { add("Открыть Wgplex…") }
+        add("Открыть Wgplex…") { [weak self] in self?.openWindow(nil) }
         add("Выход") { NSApp.terminate(nil) }
     }
 
@@ -107,6 +110,12 @@ final class StatusController: NSObject, NSMenuDelegate {
         mi.isEnabled = enabled && action != nil
         menu.addItem(mi)
         return mi
+    }
+
+    /// Opens the window; a problem target picks the section.
+    private func openWindow(_ target: ProblemTarget?) {
+        if let target { window.state.navigate(to: target) }
+        window.show()
     }
 
     private func run(_ action: UnavailableAction) {

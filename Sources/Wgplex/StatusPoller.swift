@@ -20,9 +20,23 @@ final class StatusPoller {
         poll()
     }
 
+    private var menuOpen = false
+    private var windowOpen = false
+
     /// 1.5 s while the menu is open, 10 s otherwise.
     func setMenuOpen(_ open: Bool) {
-        setInterval(open ? 1.5 : 10)
+        menuOpen = open
+        updateInterval()
+    }
+
+    /// 1.5 s while the window is open, 10 s otherwise.
+    func setWindowOpen(_ open: Bool) {
+        windowOpen = open
+        updateInterval()
+    }
+
+    private func updateInterval() {
+        setInterval(menuOpen || windowOpen ? 1.5 : 10)
     }
 
     private func setInterval(_ value: TimeInterval) {
