@@ -42,3 +42,4 @@
 
 - Вход: движок 0.1.0 опубликован (`brew install mrfokin/tap/wgplex`, `sudo brew services start --sudo-service-user=root wgplex`), `api_version = 1`, `api.md` не менялся с M3. A5 разблокирован.
 - Задача 0 (иконка) сделана: `.icns` собран, превью проверено.
+- Задача 1 сделана (swift-dev, коммит a9b1ba2, влит fast-forward): `packaging/Info.plist`, `scripts/dmg.sh`, `make dmg`. `VERSION` и `appVersion` = `0.1.0`; суффикс `-dev` допускается с предупреждением, CFBundleVersion без суффикса. После релиза обе строки поднять вместе до `0.1.1-dev`. Оркестратор: `make check` — 177 тестов зелёные; `make dmg` проходит, универсальный бинарник (x86_64 + arm64), ad-hoc подпись с требованием `identifier`, `Wgplex-0.1.0.dmg`. `.app` не запускался.
