@@ -18,7 +18,7 @@
 
 ## Вопросы
 
-- Репозиторий `mrFokin/wgplex-app` на GitHub уже есть (origin отвечает): публичный ли он уже? Проверка обновлений обращается к `releases/latest`.
+- ~~Публичность `mrFokin/wgplex-app`~~ — публичен (пользователь, 2026-11-05); `releases/latest` и `homepage` cask доступны.
 
 ## Правки design.md в этой ветке
 
@@ -43,3 +43,4 @@
 - Вход: движок 0.1.0 опубликован (`brew install mrfokin/tap/wgplex`, `sudo brew services start --sudo-service-user=root wgplex`), `api_version = 1`, `api.md` не менялся с M3. A5 разблокирован.
 - Задача 0 (иконка) сделана: `.icns` собран, превью проверено.
 - Задача 1 сделана (swift-dev, коммит a9b1ba2, влит fast-forward): `packaging/Info.plist`, `scripts/dmg.sh`, `make dmg`. `VERSION` и `appVersion` = `0.1.0`; суффикс `-dev` допускается с предупреждением, CFBundleVersion без суффикса. После релиза обе строки поднять вместе до `0.1.1-dev`. Оркестратор: `make check` — 177 тестов зелёные; `make dmg` проходит, универсальный бинарник (x86_64 + arm64), ad-hoc подпись с требованием `identifier`, `Wgplex-0.1.0.dmg`. `.app` не запускался.
+- Задачи 2 и 3 сделаны (sonnet). README влит (b6d412b) + правки оркестратора: LaunchAgent через `/usr/bin/open -g -a` (прямой запуск бинарника мог дать второй экземпляр рядом с записью входа), убрано непроверенное объяснение про `brew upgrade` и «Open Anyway». Для VM-проверки (задача 6): plist из README, текст диалога «Open Anyway». Cask `../homebrew-tap/Casks/wgplex-app.rb` создан, не закоммичен; `depends_on macos: :ventura` (`brew style` не принимает `">= :ventura"`); sha256 локального образа `bbebc0fb…` — перед релизом сверить с загружаемым файлом; `brew audit --cask --new` — после коммита в tap.
