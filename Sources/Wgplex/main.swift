@@ -1,4 +1,9 @@
-import WgplexKit
+import AppKit
 
-// Placeholder: the AppKit status item arrives in A2.
-print("Wgplex \(appVersion)")
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.setActivationPolicy(.accessory)
+    app.run()
+}
