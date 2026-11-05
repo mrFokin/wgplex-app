@@ -285,3 +285,67 @@ final class WindowModelTests: XCTestCase {
         XCTAssertEqual(ConfigDirAccess.describe(path: path, canRead: false).note, "Конфиг правит администратор")
     }
 }
+
+// MARK: update banner (design 2, 5)
+
+extension WindowModelTests {
+    private var upd: UpdateInfo {
+        UpdateInfo(version: "1.3.0", url: "https://github.com/mrFokin/wgplex-app/releases/tag/v1.3.0")
+    }
+
+    private func makeWithUpdate(_ status: Status, update: UpdateInfo?) -> WindowModel {
+        WindowModel.make(from: .ready(status), update: update, now: Date(timeIntervalSince1970: 1_800_000_000))
+    }
+
+    func testUpdateBannerWhenNoProblems() {
+        let b = makeWithUpdate(Status(canControl: true), update: upd).banner
+        XCTAssertEqual(b?.kind, .updateAvailable)
+        XCTAssertEqual(b?.update, upd)
+        XCTAssertEqual(b?.text, "Доступна новая версия Wgplex 1.3.0")
+    }
+
+    func testNilUpdateEqualsCallWithoutUpdate() {
+        let st = Status(canControl: true, paused: true)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(
+            WindowModel.make(from: .ready(st), update: nil, now: now),
+            WindowModel.make(from: .ready(st), now: now))
+        XCTAssertNil(makeWithUpdate(Status(canControl: true), update: nil).banner)
+    }
+
+    // plan A4: update is below config error, daemon unavailable, paused, rule on backup
+    func testUpdateBannerYieldsToProblems() {
+        let rule = RuleStatus(
+            index: 0, services: ["a"], via: ["nl"], inFallback: true, degraded: true, reason: .dead)
+        let t = [TunnelStatus(name: "nl", enabled: true, state: .dead)]
+        let cases: [(Status, BannerKind)] = [
+            (Status(paused: true, configErrorCount: 1, tunnels: t, rules: [rule]), .configError),
+            (Status(paused: true, tunnels: t, rules: [rule]), .paused),
+            (Status(tunnels: t, rules: [rule]), .ruleFallback),
+        ]
+        for (st, want) in cases {
+            let b = makeWithUpdate(st, update: upd).banner
+            XCTAssertEqual(b?.kind, want)
+            XCTAssertNil(b?.update, "\(want)")
+        }
+    }
+
+    // design 5: update banner only when the engine state is ready
+    func testNoUpdateBannerWhenEngineUnavailable() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        for state in [EngineState.notInstalled, .notRunning, .outdated(apiVersion: 0)] {
+            let b = WindowModel.make(from: state, update: upd, now: now).banner
+            XCTAssertEqual(b?.kind, .daemonUnavailable, "\(state)")
+        }
+    }
+
+    // update does not change anything but the banner
+    func testUpdateChangesOnlyBanner() {
+        let st = Status(canControl: true, tunnels: [TunnelStatus(name: "nl", enabled: true, state: .up)])
+        let a = makeWithUpdate(st, update: upd)
+        let b = makeWithUpdate(st, update: nil)
+        XCTAssertEqual(a.actions, b.actions)
+        XCTAssertEqual(a.tunnels, b.tunnels)
+        XCTAssertEqual(a.rules, b.rules)
+    }
+}
